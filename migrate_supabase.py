@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 import sys
 from pathlib import Path
@@ -26,6 +26,15 @@ def migrate_to_supabase():
     try:
         print("Creating tables if they don't exist...")
         Base.metadata.create_all(bind=engine)
+
+        print("Applying column migrations...")
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE fixture_reports ADD COLUMN IF NOT EXISTS best_pick_json TEXT"
+            ))
+            conn.execute(text(
+                "ALTER TABLE fixture_reports ADD COLUMN IF NOT EXISTS match_context_json TEXT"
+            ))
 
         # 1. Create Default Branches
         print("Seeding default branches...")

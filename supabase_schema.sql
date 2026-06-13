@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS public.fixture_reports (
     criteria_json TEXT DEFAULT '[]',
     goal_potential_score FLOAT DEFAULT 0.0,
     llm_explanation TEXT,
+    best_pick_json TEXT,
+    match_context_json TEXT,
     analyzed_at TIMESTAMPTZ DEFAULT NOW()
 );
 

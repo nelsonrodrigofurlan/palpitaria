@@ -18,12 +18,15 @@ from palpitaria.services.analyzer import (
     count_teams_with_profiles,
     count_today_fixtures,
     count_upcoming_fixtures,
+    default_match_context,
     get_today_context,
     persist_analysis,
 )
 from palpitaria.services.explainer import explain_analysis
 from palpitaria.services.football_data_client import FootballDataClient, FootballDataError
 from palpitaria.services.ingest import build_team_profiles, ingest_world_cup
+from palpitaria.services.scraper import enrich_fixture_analysis
+from palpitaria.models import Fixture
 
 # Global log buffer for "Nerd Vision"
 LOG_BUFFER = deque(maxlen=100)
@@ -148,6 +151,12 @@ def run_analysis(request: Request, db: Session = Depends(get_db)):
     if not settings.has_football_token:
         raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no .env")
 
+    if not settings.has_llm:
+        raise HTTPException(
+            status_code=400,
+            detail="Configure OPENAI_API_KEY no .env para coletar bastidores/contexto e gerar a recomendação.",
+        )
+
     today = get_today_context()
     analyses = analyze_upcoming(db, limit=50, for_today_only=True)
     explained = 0
@@ -163,9 +172,29 @@ def run_analysis(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=detail)
 
     LOG_BUFFER.clear()
-    add_log(f"Iniciando análise de {len(analyses)} jogos...")
+    add_log(f"Iniciando pipeline de {len(analyses)} jogos (API → scrap → recomendação)...")
     for analysis in analyses:
-        add_log(f"Analisando {analysis.home_name} x {analysis.away_name}...")
+        fixture = db.query(Fixture).filter_by(id=analysis.fixture_id).one()
+        add_log(f"[1/3] Números API — {analysis.home_name} x {analysis.away_name} (score {analysis.goal_potential_score})")
+
+        add_log("  [2/3] Scraping bastidores + contexto de jogo...")
+        home_insights, away_insights, match_context = enrich_fixture_analysis(
+            db,
+            fixture_id=analysis.fixture_id,
+            home_team_id=fixture.home_team_id,
+            away_team_id=fixture.away_team_id,
+            home_name=analysis.home_name,
+            away_name=analysis.away_name,
+            excluded=analysis.excluded,
+            home_insights=analysis.home_insights,
+            away_insights=analysis.away_insights,
+            log_callback=add_log,
+        )
+        analysis.home_insights = home_insights
+        analysis.away_insights = away_insights
+        analysis.match_context = match_context or default_match_context()
+
+        add_log("  [3/3] Recomendação final (LLM)...")
         explanation = explain_analysis(analysis)
         analysis.llm_explanation = explanation
         persist_analysis(db, analysis, explanation)
@@ -175,6 +204,8 @@ def run_analysis(request: Request, db: Session = Depends(get_db)):
             add_log("  -> Candidato qualificado!")
         else:
             add_log(f"  -> Descartado: {', '.join(analysis.exclusion_reasons)}")
+
+    add_log(f"Concluído: {explained} leituras, {candidates} candidatos.")
 
     if request.headers.get("HX-Request"):
         return HTMLResponse(
@@ -232,7 +263,7 @@ def list_branches(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/branches/add-bet")
 async def add_bet(request: Request, db: Session = Depends(get_db)):
-    from palpitaria.models import Bet
+    from palpitaria.models import Bet, Branch
     
     form = await request.form()
     branch_id = int(form.get("branch_id"))
@@ -241,9 +272,13 @@ async def add_bet(request: Request, db: Session = Depends(get_db)):
     stake = float(form.get("stake"))
     outcome = form.get("outcome") # WIN, LOSS, PENDING
     
+    branch = db.query(Branch).filter_by(id=branch_id).first()
+    commission = (branch.commission_rate / 100.0) if branch else 0.065
+    
     pl = 0.0
     if outcome == "WIN":
-        pl = stake * (odds - 1)
+        gross_profit = stake * (odds - 1)
+        pl = gross_profit * (1 - commission)
     elif outcome == "LOSS":
         pl = -stake
 
@@ -275,9 +310,10 @@ async def add_branch(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     name = form.get("name")
     description = form.get("description")
+    commission_rate = float(form.get("commission_rate", 6.5))
     slug = name.lower().replace(" ", "_")
     
-    branch = Branch(name=name, slug=slug, description=description)
+    branch = Branch(name=name, slug=slug, description=description, commission_rate=commission_rate)
     db.add(branch)
     db.commit()
     return RedirectResponse(url="/branches", status_code=303)

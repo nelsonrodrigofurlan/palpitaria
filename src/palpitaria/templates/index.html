@@ -24,8 +24,12 @@
     <button type="submit" class="secondary" data-loading="profiles">2. Atualizar Perfis (~5 min)</button>
   </form>
   <form hx-post="/analyze" hx-target="#sync-result" hx-swap="innerHTML">
-    <button type="submit" class="yellow" data-loading="analyze">3. Gerar Leituras de Hoje (LLM)</button>
+    <button type="submit" class="yellow" data-loading="analyze">3. Gerar Leituras de Hoje</button>
   </form>
+  <p class="sub" style="margin: 0.5rem 0 0; font-size: 0.85rem; color: var(--muted);">
+    Passo 3 coleta bastidores + clima/árbitro/gramado na web e só então gera a recomendação.
+    Requer <code>OPENAI_API_KEY</code> (OpenRouter). ~2–3 min por jogo.
+  </p>
 </div>
 
 <div id="sync-result" aria-live="polite" aria-busy="false"></div>
@@ -62,7 +66,7 @@
         {% endif %}
 
         {% if a.home_insights or a.away_insights %}
-        <div class="insights-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+        <div class="insights-grid">
           <div class="insight-card" style="background: #f8fafc; padding: 1rem; border-radius: 12px; border: 1px solid #e2e8f0;">
             <strong>🔍 Bastidores {{ a.home_name }}</strong>
             {% if a.home_insights %}
@@ -92,18 +96,46 @@
         </div>
         {% endif %}
 
-        {% include "partials/criteria.html" %}
+        <div class="table-container">
+          {% include "partials/criteria.html" %}
+        </div>
 
-        {% if a.picks %}
-        <div class="scenarios">
-          {% for p in a.picks %}
-          <div class="scenario" style="border-left-color: {% if p.branch == 'over_1_5' %}var(--blue){% else %}var(--yellow){% endif %};">
-            <strong>{{ p.branch | replace('_', ' ') | upper }} — {{ p.verdict }}</strong>
-            <div><em>Pessimista:</em> {{ p.pessimistic }}</div>
-            <div><em>Realista:</em> {{ p.realistic }}</div>
-            <div><em>Otimista:</em> {{ p.optimistic }}</div>
+        {% if not a.excluded %}
+        <div class="match-context-section" style="margin-top: 1.5rem;">
+          <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--text); margin: 0 0 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;">
+            🌍 Contexto de Jogo
+          </h3>
+          <div class="match-context" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+            <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 12px; border: 1px solid #e2e8f0; font-size: 0.85rem;">
+              ☁️ <strong>Clima:</strong> {{ (a.match_context or {}).weather or 'Aguardando coleta' }}
+            </div>
+            <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 12px; border: 1px solid #e2e8f0; font-size: 0.85rem;">
+              🏁 <strong>Árbitro:</strong> {{ (a.match_context or {}).referee or 'Aguardando coleta' }}
+            </div>
+            <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 12px; border: 1px solid #e2e8f0; font-size: 0.85rem;">
+              🌱 <strong>Gramado:</strong> {{ (a.match_context or {}).pitch or 'Aguardando coleta' }}
+            </div>
           </div>
-          {% endfor %}
+          {% if (a.match_context or {}).impact %}
+          <p style="font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0;">
+            💡 {{ a.match_context.impact }}
+          </p>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if a.best_pick %}
+        <div class="best-recommendation" style="margin-top: 1.5rem; padding: 1.5rem; background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-radius: 20px; border: 1px solid #bfdbfe;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <strong style="font-size: 1.1rem; color: var(--blue); text-transform: uppercase; letter-spacing: 0.05em;">🎯 Recomendação Principal</strong>
+            <div class="badge {% if a.best_pick.verdict == 'STRONG' %}ok{% else %}warn{% endif %}">{{ a.best_pick.verdict }}</div>
+          </div>
+          <div style="font-size: 1.4rem; font-weight: 800; color: var(--text); margin-bottom: 0.5rem;">
+            {{ a.best_pick.market }}
+          </div>
+          <p style="font-size: 0.95rem; color: #1e40af; margin: 0; line-height: 1.6;">
+            {{ a.best_pick.reason }}
+          </p>
         </div>
         {% endif %}
       </div>
@@ -157,7 +189,7 @@
       {% endif %}
 
       {% if a.home_insights or a.away_insights %}
-      <div class="insights-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+      <div class="insights-grid">
         <div class="insight-card" style="background: #fff1f2; padding: 1rem; border-radius: 12px; border: 1px solid #fecaca;">
           <strong>🔍 Bastidores {{ a.home_name }}</strong>
           {% if a.home_insights %}
@@ -190,7 +222,9 @@
       {% if a.criteria %}
       <details open>
         <summary style="font-size: 0.8rem; cursor: pointer; color: var(--muted); margin-top: 0.75rem;">Critérios numéricos</summary>
-        {% include "partials/criteria.html" %}
+        <div class="table-container">
+          {% include "partials/criteria.html" %}
+        </div>
       </details>
       {% endif %}
     </div>

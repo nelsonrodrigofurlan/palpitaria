@@ -64,6 +64,8 @@ class FixtureReport(Base):
     criteria_json: Mapped[str] = mapped_column(Text, default="[]")
     goal_potential_score: Mapped[float] = mapped_column(Float, default=0.0)
     llm_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    best_pick_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    match_context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     analyzed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     fixture: Mapped["Fixture"] = relationship(back_populates="report")
@@ -117,6 +119,7 @@ class Branch(Base):
     name: Mapped[str] = mapped_column(String(60), unique=True)
     slug: Mapped[str] = mapped_column(String(30), unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    commission_rate: Mapped[float] = mapped_column(Float, default=6.5)  # % de comissão (ex: 6.5)
 
     bets: Mapped[list["Bet"]] = relationship(back_populates="branch")
 

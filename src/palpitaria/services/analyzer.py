@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session, joinedload
 
 from palpitaria.config import settings
-from palpitaria.models import Fixture, Pick
+from palpitaria.models import Fixture
 from palpitaria.services.ingest import latest_profile
 
 
@@ -37,10 +37,11 @@ class FixtureAnalysis:
     excluded: bool
     exclusion_reasons: list[str] = field(default_factory=list)
     criteria: list[CriterionResult] = field(default_factory=list)
-    picks: list[dict] = field(default_factory=list)
+    best_pick: dict | None = None  # Substitui a lista de picks por uma única recomendação
     llm_explanation: str | None = None
     home_insights: dict | None = None
     away_insights: dict | None = None
+    match_context: dict | None = None  # Clima, Árbitro, Gramado
 
 
 @dataclass
@@ -189,7 +190,7 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
     analysis.goal_potential_score = round((passed_weight / len(criteria)) * 100, 1)
 
     if not analysis.excluded:
-        analysis.picks = _build_picks(analysis, home_profile, away_profile, combined_avg, min_over_05)
+        analysis.best_pick = _select_best_pick(analysis, home_profile, away_profile, combined_avg, min_over_05)
 
     # Attach insights if available
     if home_profile.insights_json:
@@ -200,74 +201,61 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
     return analysis
 
 
-def _build_picks(
+def default_match_context() -> dict:
+    return {
+        "weather": "Aguardando coleta (clima no horário do jogo)",
+        "referee": "Aguardando coleta (árbitro e estilo)",
+        "pitch": "Aguardando coleta (estado do gramado)",
+    }
+
+
+def _select_best_pick(
     analysis: FixtureAnalysis,
     home_profile,
     away_profile,
     combined_avg: float,
     min_over_05: float,
-) -> list[dict]:
+) -> dict:
     confidence = analysis.goal_potential_score
     over_15_rate = min(home_profile.over_15_rate, away_profile.over_15_rate)
     over_25_rate = min(home_profile.over_25_rate, away_profile.over_25_rate)
-
-    picks = []
-
-    # Over 0.5 - Sempre presente como base ou alerta
-    over_05 = {
-        "branch": "over_0_5",
-        "verdict": "STRONG" if confidence >= 85 else "CANDIDATE",
-        "pessimistic": "1 gol no segundo tempo — jogo truncado no 1T, mas histórico sustenta pelo menos um gol.",
-        "realistic": f"Média combinada {combined_avg:.1f} gols/jogo; over 0,5 histórico em {min_over_05:.0%} dos jogos.",
-        "optimistic": "Jogo aberto cedo — 2+ gols antes do intervalo.",
-    }
-    picks.append(over_05)
-
-    # Over 1.5 - Recomendação ou Sugestão
-    over_15_verdict = "WATCH"
-    if over_15_rate >= 0.72 and confidence >= 90:
-        over_15_verdict = "STRONG"
-    elif over_15_rate >= 0.65 and combined_avg >= 2.4:
-        over_15_verdict = "CANDIDATE"
-
-    over_15 = {
-        "branch": "over_1_5",
-        "verdict": over_15_verdict,
-        "pessimistic": "2 gols apertados (1-1 ou 2-0) — linha passa, sem folga.",
-        "realistic": f"Over 1,5 histórico em {over_15_rate:.0%}; requer jogo mais solto que o mínimo.",
-        "optimistic": "Trocação franca — 3+ gols com defesas expostas.",
-    }
-    picks.append(over_15)
-
-    # Over 2.5 - Apenas se for realmente uma "chuva de gols"
-    if combined_avg >= 3.2 and over_25_rate >= 0.55 and confidence >= 95:
-        over_25 = {
-            "branch": "over_2_5",
-            "verdict": "STRONG" if combined_avg >= 3.5 else "CANDIDATE",
-            "pessimistic": "3 gols chorados — placar de 2-1 ou 3-0 no limite.",
-            "realistic": f"Média altíssima ({combined_avg:.1f}); histórico de Over 2.5 em {over_25_rate:.0%}.",
-            "optimistic": "Goleada ou jogo totalmente aberto — 4+ gols.",
-        }
-        picks.append(over_25)
-
-    # 1X2 - Vitoria/Empate/Derrota (Apenas se houver dominância clara)
     home_win_rate = home_profile.win_rate
     away_win_rate = away_profile.win_rate
+
+    # Lógica de decisão para a ÚNICA melhor recomendação
     
-    # Critério rigoroso para 1X2: Diferença de win_rate > 25% e insights positivos
-    if abs(home_win_rate - away_win_rate) >= 0.25:
+    # 1. Prioridade Máxima: Chuva de Gols (Over 2.5)
+    if combined_avg >= 3.2 and over_25_rate >= 0.55 and confidence >= 95:
+        return {
+            "market": "OVER 2.5 GOALS",
+            "verdict": "STRONG",
+            "reason": f"Média altíssima ({combined_avg:.1f}) e histórico de Over 2.5 em {over_25_rate:.0%}. Cenário de jogo muito aberto."
+        }
+
+    # 2. Dominância Clara (1X2)
+    if abs(home_win_rate - away_win_rate) >= 0.30 and confidence >= 90:
         fav_name = analysis.home_name if home_win_rate > away_win_rate else analysis.away_name
         fav_rate = max(home_win_rate, away_win_rate)
-        
-        picks.append({
-            "branch": "1x2",
-            "verdict": "STRONG" if fav_rate >= 0.7 else "CANDIDATE",
-            "pessimistic": f"Vitória magra do favorito ({fav_name}) — jogo controlado mas sem brilho.",
-            "realistic": f"Dominância estatística: {fav_name} venceu {fav_rate:.0%} dos jogos recentes.",
-            "optimistic": f"Vitória tranquila — superioridade técnica se impõe desde o início.",
-        })
+        return {
+            "market": f"VITÓRIA: {fav_name}",
+            "verdict": "STRONG" if fav_rate >= 0.75 else "CANDIDATE",
+            "reason": f"Superioridade técnica clara. {fav_name} venceu {fav_rate:.0%} dos jogos recentes."
+        }
 
-    return picks
+    # 3. Segurança no Over 1.5
+    if over_15_rate >= 0.72 and combined_avg >= 2.4 and confidence >= 90:
+        return {
+            "market": "OVER 1.5 GOALS",
+            "verdict": "STRONG",
+            "reason": f"Histórico sólido de pelo menos 2 gols ({over_15_rate:.0%}) com média combinada de {combined_avg:.1f}."
+        }
+
+    # 4. Base de Segurança: Over 0.5 (Anti-Zero-Gols)
+    return {
+        "market": "OVER 0.5 GOALS",
+        "verdict": "STRONG" if confidence >= 85 else "CANDIDATE",
+        "reason": f"Filtro anti-zero-gols aprovado com Score {confidence}. Média combinada de {combined_avg:.1f} gols/jogo."
+    }
 
 
 def analyze_upcoming(
@@ -299,23 +287,11 @@ def persist_analysis(db: Session, analysis: FixtureAnalysis, llm_explanation: st
     report.criteria_json = json.dumps([asdict(c) for c in analysis.criteria], ensure_ascii=False)
     report.goal_potential_score = analysis.goal_potential_score
     report.llm_explanation = explanation
+    report.best_pick_json = json.dumps(analysis.best_pick, ensure_ascii=False) if analysis.best_pick else None
+    report.match_context_json = (
+        json.dumps(analysis.match_context, ensure_ascii=False) if analysis.match_context else None
+    )
     report.analyzed_at = datetime.utcnow()
-
-    db.query(Pick).filter_by(fixture_id=analysis.fixture_id).delete()
-    if not analysis.excluded:
-        for pick_data in analysis.picks:
-            pick = Pick(
-                fixture_id=analysis.fixture_id,
-                branch=pick_data["branch"],
-                verdict=pick_data["verdict"],
-                pessimistic=pick_data["pessimistic"],
-                realistic=pick_data["realistic"],
-                optimistic=pick_data["optimistic"],
-                criteria_json=report.criteria_json,
-                llm_explanation=explanation,
-                goal_potential_score=analysis.goal_potential_score,
-            )
-            db.add(pick)
 
     db.commit()
 
@@ -330,8 +306,16 @@ def attach_saved_reports(db: Session, analyses: list[FixtureAnalysis]) -> None:
     by_fixture = {r.fixture_id: r for r in reports}
     for analysis in analyses:
         report = by_fixture.get(analysis.fixture_id)
-        if report and report.llm_explanation:
+        if not report:
+            continue
+        if report.llm_explanation:
             analysis.llm_explanation = report.llm_explanation
+        if report.best_pick_json:
+            analysis.best_pick = json.loads(report.best_pick_json)
+        if report.match_context_json:
+            analysis.match_context = json.loads(report.match_context_json)
+        elif not analysis.excluded and report.llm_explanation:
+            analysis.match_context = default_match_context()
 
 
 def count_teams_with_profiles(db: Session) -> tuple[int, int]:

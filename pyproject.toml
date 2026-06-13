@@ -15,6 +15,7 @@ dependencies = [
     "python-multipart>=0.0.17",
     "openai>=1.60.0",
     "tzdata>=2024.1",
+    "duckduckgo-search>=7.0.0",
 ]
 
 [project.optional-dependencies]

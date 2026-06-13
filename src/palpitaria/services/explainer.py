@@ -11,16 +11,15 @@ SYSTEM_PROMPT = """Você é o analista sênior da Palpitaria FC. Sua missão é 
 
 Regras de Ouro:
 1. SOBRIEDADE: Não seja "emocionado". Se os dados indicam um jogo aberto, explique o PORQUÊ (ex: defesas vazadas, ataques eficientes). Se houver riscos, aponte-os.
-2. FOCO NO DIA: Considere as informações de bastidores (lesões, clima, motivação) como fator determinante para validar ou questionar as estatísticas.
-3. RECOMENDAÇÃO ÚNICA: Identifique a melhor entrada (ex: Over 0.5) como a principal e trate as outras como sugestões ou alertas de risco.
-4. MERCADO 1X2: Se houver uma recomendação de Vitória/Empate/Derrota (1X2), ela deve ser EXTREMAMENTE bem fundamentada. Analise se a superioridade estatística é confirmada pelos bastidores (ex: o favorito está completo? O azarão tem desfalques?). Se os bastidores contradizem a estatística, alerte sobre o risco da "zebra".
-5. MERCADOS AGRESSIVOS: Se o potencial for altíssimo (Score > 90 e médias > 3.0), sinta-se à vontade para sugerir Over 2.5 ou 3.5, mas sempre com embasamento.
+2. FOCO NO DIA: Considere as informações de bastidores (lesões, clima, motivação) e as condições de jogo (Árbitro, Clima, Gramado) como fatores determinantes para validar ou questionar as estatísticas.
+3. RECOMENDAÇÃO ÚNICA: Identifique a melhor entrada (ex: Over 0.5, Vitória, etc.) como a principal e fundamente-a com base em todos os dados.
+4. ARBITRAGEM E CLIMA: Analise se o árbitro é do tipo que "deixa o jogo rolar" ou se é rigoroso (o que pode travar o jogo ou gerar expulsões). Veja se o clima (chuva, calor extremo) favorece ou atrapalha o fluxo de gols.
 5. ESTRUTURA:
-   - Parágrafo 1: O cenário técnico do jogo (estatística + bastidores).
-   - Parágrafo 2: A recomendação principal e o porquê da confiança nela.
-   - Parágrafo 3: Alertas de risco ou sugestões secundárias (ex: "O Over 1.5 é possível, mas a retranca do visitante sugere cautela").
+   - Parágrafo 1: O cenário técnico e o momento das equipes (bastidores).
+   - Parágrafo 2: A recomendação principal fundamentada (estatística + condições de jogo).
+   - Parágrafo 3: Alertas de risco específicos (ex: "O árbitro rigoroso pode gerar muitas interrupções, dificultando o Over 1.5").
 
-Tom de voz: Profissional, analítico, direto ao ponto, estilo comentarista técnico de alto nível. Use termos como 'valor', 'exposição', 'leitura de fluxo', 'equilíbrio'.
+Tom de voz: Profissional, analítico, direto ao ponto. Use termos como 'valor', 'exposição', 'leitura de fluxo', 'equilíbrio'.
 Máximo 3 parágrafos. Não invente dados."""
 
 
@@ -45,7 +44,8 @@ def explain_analysis(analysis: FixtureAnalysis) -> str:
         ],
         "home_insights": analysis.home_insights,
         "away_insights": analysis.away_insights,
-        "picks": analysis.picks,
+        "best_pick": analysis.best_pick,
+        "match_context": analysis.match_context,
     }
 
     if not settings.has_llm:
@@ -69,9 +69,17 @@ def _fallback_explanation(analysis: FixtureAnalysis) -> str:
             f"Score de potencial: {analysis.goal_potential_score}/100."
         )
 
-    branches = ", ".join(p["branch"] for p in analysis.picks) or "nenhuma"
+    pick = analysis.best_pick
+    if pick:
+        return (
+            f"Candidato: {analysis.home_name} x {analysis.away_name}. "
+            f"Score {analysis.goal_potential_score}/100. "
+            f"Recomendação: {pick.get('market', '—')} ({pick.get('verdict', '—')}). "
+            f"{pick.get('reason', '')}"
+        )
+
     return (
         f"Candidato: {analysis.home_name} x {analysis.away_name}. "
-        f"Score {analysis.goal_potential_score}/100. Filiais: {branches}. "
+        f"Score {analysis.goal_potential_score}/100. "
         f"Todos os critérios numéricos passaram — ver tabela abaixo."
     )

@@ -76,7 +76,8 @@ def test_analyze_fixture_candidate(db_session):
     
     assert analysis.excluded is False
     assert analysis.goal_potential_score >= 80
-    assert len(analysis.picks) > 0
+    assert analysis.best_pick is not None
+    assert analysis.best_pick.get("market")
     assert analysis.home_crest == "home.png"
 
 def test_today_context_logic():

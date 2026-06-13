@@ -8,16 +8,20 @@
 
 <div class="card" style="margin-bottom: 2rem; background: #f1f5f9;">
   <h3 style="margin-top: 0;">Nova Filial</h3>
-  <form action="/branches/add" method="POST" style="display: flex; gap: 1rem; align-items: flex-end;">
-    <div style="flex: 1;">
+  <form action="/branches/add" method="POST" style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 200px;">
       <label style="display: block; font-size: 0.8rem; margin-bottom: 0.25rem;">Nome da Filial</label>
       <input type="text" name="name" placeholder="Ex: Over 2.5" required style="width: 100%; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
     </div>
-    <div style="flex: 2;">
+    <div style="flex: 2; min-width: 250px;">
       <label style="display: block; font-size: 0.8rem; margin-bottom: 0.25rem;">Descrição</label>
       <input type="text" name="description" placeholder="Ex: Estratégia de jogos com média > 3.0" required style="width: 100%; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
     </div>
-    <button type="submit">Criar Filial</button>
+    <div style="flex: 0.5; min-width: 100px;">
+      <label style="display: block; font-size: 0.8rem; margin-bottom: 0.25rem;">Comissão %</label>
+      <input type="number" step="0.1" name="commission_rate" value="6.5" required style="width: 100%; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
+    </div>
+    <button type="submit" style="flex-shrink: 0;">Criar Filial</button>
   </form>
 </div>
 
@@ -37,6 +41,7 @@
     </div>
     
     <p style="color: var(--muted); font-size: 0.9rem;">{{ b.description }}</p>
+    <p style="font-size: 0.75rem; color: var(--muted); margin-top: -0.5rem;">Taxa de comissão: <strong>{{ b.commission_rate }}%</strong></p>
     
     <div style="display: flex; gap: 1rem; margin: 1rem 0; font-size: 0.85rem;">
       <span>✅ <strong>{{ stats[b.id].win_count }}</strong> Greens</span>
@@ -48,14 +53,14 @@
     <form action="/branches/add-bet" method="POST" style="display: flex; flex-direction: column; gap: 0.75rem;">
       <input type="hidden" name="branch_id" value="{{ b.id }}">
       
-      <div style="display: flex; gap: 0.5rem;">
-        <input type="text" name="description" placeholder="Jogo (ex: EUA x Paraguai)" required style="flex: 2; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
-        <input type="number" step="0.01" name="odds" placeholder="Odd" required style="flex: 1; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <input type="text" name="description" placeholder="Jogo (ex: EUA x Paraguai)" required style="flex: 2; min-width: 150px; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
+        <input type="number" step="0.01" name="odds" placeholder="Odd" required style="flex: 1; min-width: 80px; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
       </div>
       
-      <div style="display: flex; gap: 0.5rem;">
-        <input type="number" step="0.01" name="stake" placeholder="Stake" required style="flex: 1; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
-        <select name="outcome" style="flex: 1; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <input type="number" step="0.01" name="stake" placeholder="Stake" required style="flex: 1; min-width: 100px; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
+        <select name="outcome" style="flex: 1; min-width: 120px; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
           <option value="PENDING">Pendente</option>
           <option value="WIN">GREEN (Win)</option>
           <option value="LOSS">RED (Loss)</option>
@@ -68,34 +73,36 @@
     {% if stats[b.id].bets %}
     <div style="margin-top: 1.5rem;">
       <h3 style="font-size: 0.9rem; color: var(--muted); margin-bottom: 0.5rem;">Últimas Entradas</h3>
-      <table style="font-size: 0.75rem;">
-        <thead>
-          <tr>
-            <th>Jogo</th>
-            <th>Odd</th>
-            <th>Stake</th>
-            <th>P&L</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for bet in stats[b.id].bets %}
-          <tr>
-            <td>{{ bet.description }}</td>
-            <td>{{ bet.odds }}</td>
-            <td>{{ bet.stake }}</td>
-            <td class="{% if bet.outcome == 'WIN' %}pass{% elif bet.outcome == 'LOSS' %}fail{% endif %}">
-              {{ "%.2f"|format(bet.profit_loss) }}
-            </td>
-            <td>
-              <form action="/branches/bet/delete/{{ bet.id }}" method="POST" onsubmit="return confirm('Excluir esta entrada?')">
-                <button type="submit" style="background: none; box-shadow: none; color: #94a3b8; padding: 0; font-size: 0.8rem; border: none;">✕</button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="table-container">
+        <table style="font-size: 0.75rem;">
+          <thead>
+            <tr>
+              <th>Jogo</th>
+              <th>Odd</th>
+              <th>Stake</th>
+              <th>P&L</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for bet in stats[b.id].bets %}
+            <tr>
+              <td>{{ bet.description }}</td>
+              <td>{{ bet.odds }}</td>
+              <td>{{ bet.stake }}</td>
+              <td class="{% if bet.outcome == 'WIN' %}pass{% elif bet.outcome == 'LOSS' %}fail{% endif %}">
+                {{ "%.2f"|format(bet.profit_loss) }}
+              </td>
+              <td>
+                <form action="/branches/bet/delete/{{ bet.id }}" method="POST" onsubmit="return confirm('Excluir esta entrada?')">
+                  <button type="submit" style="background: none; box-shadow: none; color: #94a3b8; padding: 0; font-size: 0.8rem; border: none;">✕</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
     {% endif %}
   </div>
