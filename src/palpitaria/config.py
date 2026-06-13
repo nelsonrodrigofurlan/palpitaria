@@ -1,7 +1,8 @@
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+import os
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,8 +12,20 @@ def _strip_env(value: object) -> object:
     return value
 
 
+def _is_cloud_run() -> bool:
+    return bool(os.getenv("K_SERVICE"))
+
+
+# Cloud Run: variáveis vêm só do runtime (aba Variáveis do serviço), nunca do build.
+_ENV_FILE = None if _is_cloud_run() else ".env"
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILE,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     football_data_token: str = ""
 
@@ -36,6 +49,20 @@ class Settings(BaseSettings):
     @classmethod
     def strip_quotes(cls, value: object) -> object:
         return _strip_env(value)
+
+    @model_validator(mode="after")
+    def validate_cloud_run_database(self) -> "Settings":
+        if _is_cloud_run() and (not self.database_url or self.uses_sqlite):
+            msg = (
+                "DATABASE_URL ausente ou inválida no Cloud Run. "
+                "Configure em Serviço → Editar → Variáveis de ambiente (runtime), não no Cloud Build."
+            )
+            raise ValueError(msg)
+        return self
+
+    @property
+    def config_source(self) -> str:
+        return "cloud_run_env" if _is_cloud_run() else "local_env_file"
 
     @property
     def db_url(self) -> str:

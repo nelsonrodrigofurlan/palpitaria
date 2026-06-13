@@ -334,6 +334,7 @@ def health(db: Session = Depends(get_db)) -> dict:
 
     payload: dict = {
         "status": "ok",
+        "config_source": settings.config_source,
         "football_data": settings.has_football_token,
         "llm": settings.has_llm,
         "llm_provider": settings.llm_provider_label,
