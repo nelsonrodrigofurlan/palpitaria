@@ -2,7 +2,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import os
 
-from pydantic import field_validator, model_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -50,16 +50,6 @@ class Settings(BaseSettings):
     def strip_quotes(cls, value: object) -> object:
         return _strip_env(value)
 
-    @model_validator(mode="after")
-    def validate_cloud_run_database(self) -> "Settings":
-        if _is_cloud_run() and (not self.database_url or self.uses_sqlite):
-            msg = (
-                "DATABASE_URL ausente ou inválida no Cloud Run. "
-                "Configure em Serviço → Editar → Variáveis de ambiente (runtime), não no Cloud Build."
-            )
-            raise ValueError(msg)
-        return self
-
     @property
     def config_source(self) -> str:
         return "cloud_run_env" if _is_cloud_run() else "local_env_file"
@@ -86,6 +76,18 @@ class Settings(BaseSettings):
             return "sqlite (local)"
         parsed = urlparse(self.db_url)
         return parsed.hostname or "postgresql"
+
+    @property
+    def database_config_error(self) -> str | None:
+        """Cloud Run sem DATABASE_URL válida — app sobe, mas /health avisa."""
+        if not _is_cloud_run():
+            return None
+        if not self.database_url or self.uses_sqlite:
+            return (
+                "DATABASE_URL ausente ou inválida no Cloud Run. "
+                "Configure em Serviço → Editar → Variáveis de ambiente (runtime), não no Cloud Build."
+            )
+        return None
 
     football_data_base_url: str = "https://api.football-data.org/v4"
     world_cup_code: str = "WC"

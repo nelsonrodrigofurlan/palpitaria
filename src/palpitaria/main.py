@@ -53,6 +53,8 @@ app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")
 
 @app.on_event("startup")
 def on_startup() -> None:
+    if settings.database_config_error:
+        print(f"AVISO: {settings.database_config_error}", flush=True)
     init_db()
 
 
@@ -343,6 +345,9 @@ def health(db: Session = Depends(get_db)) -> dict:
         "database_host": settings.db_host_label,
         "timezone": settings.app_timezone,
     }
+    if settings.database_config_error:
+        payload["status"] = "misconfigured"
+        payload["database_config_error"] = settings.database_config_error
     try:
         payload["teams"] = db.query(Team).count()
         payload["fixtures"] = db.query(Fixture).count()
