@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Filiais — Palpitaria FC{% endblock %}
+{% block content %}
+<header style="margin-bottom: 2rem;">
+  <h1>🏢 Gestão de Filiais</h1>
+  <p class="sub">Acompanhe o P&L de cada mercado separadamente</p>
+</header>
+
+<div class="card" style="margin-bottom: 2rem; background: #f1f5f9;">
+  <h3 style="margin-top: 0;">Nova Filial</h3>
+  <form action="/branches/add" method="POST" style="display: flex; gap: 1rem; align-items: flex-end;">
+    <div style="flex: 1;">
+      <label style="display: block; font-size: 0.8rem; margin-bottom: 0.25rem;">Nome da Filial</label>
+      <input type="text" name="name" placeholder="Ex: Over 2.5" required style="width: 100%; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
+    </div>
+    <div style="flex: 2;">
+      <label style="display: block; font-size: 0.8rem; margin-bottom: 0.25rem;">Descrição</label>
+      <input type="text" name="description" placeholder="Ex: Estratégia de jogos com média > 3.0" required style="width: 100%; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
+    </div>
+    <button type="submit">Criar Filial</button>
+  </form>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 2rem;">
+  {% for b in branches %}
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h2 style="margin: 0; border: none; padding: 0;">{{ b.name }}</h2>
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <div class="badge {% if stats[b.id].total_pl >= 0 %}ok{% else %}err{% endif %}" style="font-size: 0.9rem; padding: 0.4rem 0.8rem;">
+          P&L: {{ "%.2f"|format(stats[b.id].total_pl) }}
+        </div>
+        <form action="/branches/delete/{{ b.id }}" method="POST" onsubmit="return confirm('Excluir filial e todas as apostas?')">
+          <button type="submit" style="background: #fee2e2; color: #991b1b; padding: 0.4rem 0.6rem; font-size: 0.8rem;">🗑️</button>
+        </form>
+      </div>
+    </div>
+    
+    <p style="color: var(--muted); font-size: 0.9rem;">{{ b.description }}</p>
+    
+    <div style="display: flex; gap: 1rem; margin: 1rem 0; font-size: 0.85rem;">
+      <span>✅ <strong>{{ stats[b.id].win_count }}</strong> Greens</span>
+      <span>❌ <strong>{{ stats[b.id].loss_count }}</strong> Reds</span>
+    </div>
+
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 1.5rem 0;">
+
+    <form action="/branches/add-bet" method="POST" style="display: flex; flex-direction: column; gap: 0.75rem;">
+      <input type="hidden" name="branch_id" value="{{ b.id }}">
+      
+      <div style="display: flex; gap: 0.5rem;">
+        <input type="text" name="description" placeholder="Jogo (ex: EUA x Paraguai)" required style="flex: 2; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
+        <input type="number" step="0.01" name="odds" placeholder="Odd" required style="flex: 1; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
+      </div>
+      
+      <div style="display: flex; gap: 0.5rem;">
+        <input type="number" step="0.01" name="stake" placeholder="Stake" required style="flex: 1; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
+        <select name="outcome" style="flex: 1; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
+          <option value="PENDING">Pendente</option>
+          <option value="WIN">GREEN (Win)</option>
+          <option value="LOSS">RED (Loss)</option>
+        </select>
+      </div>
+      
+      <button type="submit" class="secondary" style="width: 100%;">Lançar Entrada</button>
+    </form>
+
+    {% if stats[b.id].bets %}
+    <div style="margin-top: 1.5rem;">
+      <h3 style="font-size: 0.9rem; color: var(--muted); margin-bottom: 0.5rem;">Últimas Entradas</h3>
+      <table style="font-size: 0.75rem;">
+        <thead>
+          <tr>
+            <th>Jogo</th>
+            <th>Odd</th>
+            <th>Stake</th>
+            <th>P&L</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for bet in stats[b.id].bets %}
+          <tr>
+            <td>{{ bet.description }}</td>
+            <td>{{ bet.odds }}</td>
+            <td>{{ bet.stake }}</td>
+            <td class="{% if bet.outcome == 'WIN' %}pass{% elif bet.outcome == 'LOSS' %}fail{% endif %}">
+              {{ "%.2f"|format(bet.profit_loss) }}
+            </td>
+            <td>
+              <form action="/branches/bet/delete/{{ bet.id }}" method="POST" onsubmit="return confirm('Excluir esta entrada?')">
+                <button type="submit" style="background: none; box-shadow: none; color: #94a3b8; padding: 0; font-size: 0.8rem; border: none;">✕</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

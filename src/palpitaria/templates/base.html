@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Palpitaria FC{% endblock %}</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #1e293b;
+      --muted: #64748b;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --yellow-canario: #ffe135;
+      --blue: #2563eb;
+      --accent: #10b981;
+      --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+      line-height: 1.6;
+      display: flex;
+      min-height: 100vh;
+    }
+    .sidebar {
+      width: 260px;
+      background: #0f172a;
+      color: white;
+      padding: 2rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+    .sidebar-logo {
+      font-weight: 800;
+      font-size: 1.2rem;
+      color: var(--yellow-canario);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .nav-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .nav-item a {
+      color: #94a3b8;
+      text-decoration: none;
+      padding: 0.75rem 1rem;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .nav-item a:hover, .nav-item a.active {
+      background: #1e293b;
+      color: white;
+    }
+    .nav-item a.active {
+      color: var(--yellow-canario);
+    }
+    .main-content {
+      flex: 1;
+      padding: 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 2.2rem;
+      margin: 0 0 .5rem;
+      color: var(--blue);
+      font-weight: 800;
+      letter-spacing: -0.025em;
+    }
+    .sub { color: var(--muted); margin-bottom: 2rem; font-weight: 500; }
+    .actions { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; align-items: center; }
+    button {
+      background: var(--green);
+      color: white;
+      border: none;
+      padding: .75rem 1.25rem;
+      border-radius: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.2s, background 0.2s;
+      box-shadow: var(--shadow);
+    }
+    button:hover { transform: translateY(-2px); background: #16a34a; }
+    button.secondary { background: var(--blue); }
+    button.secondary:hover { background: #1d4ed8; }
+    button.yellow { background: var(--yellow-canario); color: #1a1a1a; }
+    button.yellow:hover { background: #f5c400; color: #1a1a1a; }
+    .badge {
+      display: inline-block;
+      padding: .25rem .75rem;
+      border-radius: 999px;
+      font-size: .75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge.ok { background: #dcfce7; color: #166534; }
+    .badge.warn { background: #fef9c3; color: #854d0e; }
+    .badge.err { background: #fee2e2; color: #991b1b; }
+    section { margin-bottom: 3rem; }
+    h2 {
+      font-size: 1.25rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    h2::after { content: ''; flex: 1; height: 2px; background: #e2e8f0; }
+    .card {
+      background: var(--card);
+      border-radius: 20px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      border: 1px solid #e2e8f0;
+      box-shadow: var(--shadow);
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: var(--blue); }
+    .match-title { font-weight: 800; font-size: 1.2rem; color: var(--blue); }
+    .meta { color: var(--muted); font-size: .9rem; margin-bottom: 1rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 1rem; }
+    th, td { text-align: left; padding: .75rem; border-bottom: 1px solid #f1f5f9; }
+    th { color: var(--muted); font-weight: 600; }
+    .pass { color: var(--green); font-weight: 700; }
+    .fail { color: var(--red); font-weight: 700; }
+    /* Help Button */
+    .help-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      background: #e2e8f0;
+      color: #64748b;
+      border-radius: 50%;
+      font-size: 0.7rem;
+      font-weight: 800;
+      cursor: pointer;
+      margin-left: 0.5rem;
+      transition: all 0.2s;
+      border: none;
+      vertical-align: middle;
+    }
+    .help-btn:hover {
+      background: var(--blue);
+      color: white;
+    }
+    /* Didactic Modal */
+    .didactic-modal {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 90%; max-width: 500px;
+      background: white;
+      border-radius: 24px;
+      box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+      z-index: 10001;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid #e2e8f0;
+    }
+    .didactic-header {
+      padding: 1.5rem 1.5rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .didactic-body {
+      padding: 0 1.5rem 2rem;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      color: var(--text);
+    }
+    .didactic-body strong { color: var(--blue); }
+    .didactic-close {
+      background: #f1f5f9;
+      border: none;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-weight: 800;
+      color: var(--muted);
+    }
+    .scenarios {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+    .scenario {
+      background: #f1f5f9;
+      padding: 1.25rem;
+      border-radius: 16px;
+      font-size: .9rem;
+      border-left: 4px solid var(--yellow);
+    }
+    .scenario strong { display: block; color: var(--text); margin-bottom: .5rem; font-size: 1rem; }
+    .scenario em { color: var(--blue); font-style: normal; font-weight: 600; }
+    .alert {
+      background: #fff7ed;
+      border: 1px solid #fdba74;
+      padding: 1rem;
+      border-radius: 12px;
+      margin-bottom: 2rem;
+      color: #9a3412;
+      font-weight: 500;
+    }
+    a { color: var(--blue); text-decoration: none; font-weight: 600; }
+    a:hover { text-decoration: underline; }
+    .llm-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      padding: 1.25rem;
+      border-radius: 16px;
+      margin-top: 1rem;
+      font-style: italic;
+      color: #1e40af;
+      line-height: 1.7;
+    }
+    /* Collapsible Cards */
+    .card-content {
+      max-height: 2000px;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out, opacity 0.2s;
+      opacity: 1;
+    }
+    .card.collapsed .card-content {
+      max-height: 0;
+      opacity: 0;
+      margin: 0;
+      padding: 0;
+    }
+    .card-header {
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      user-select: none;
+    }
+    .toggle-icon {
+      font-size: 1.2rem;
+      transition: transform 0.2s;
+      color: var(--muted);
+    }
+    .card.collapsed .toggle-icon {
+      transform: rotate(-90deg);
+    }
+    /* Terminal Modal */
+    .terminal-modal {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 90%; max-width: 800px;
+      height: 400px;
+      background: #0f172a;
+      color: #22c55e;
+      border-radius: 12px;
+      box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.5);
+      z-index: 10000;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid #334155;
+    }
+    .terminal-header {
+      background: #1e293b;
+      padding: 0.5rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #334155;
+    }
+    .terminal-body {
+      padding: 1rem;
+      flex: 1;
+      overflow-y: auto;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+    }
+    .terminal-body pre { margin: 0; }
+    .terminal-footer {
+      background: #1e293b;
+      padding: 0.5rem 1rem;
+      font-size: 0.75rem;
+      color: #94a3b8;
+      display: flex;
+      justify-content: space-between;
+    }
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 9999;
+      display: none;
+    }
+    /* Loading */
+    #top-progress {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+      background: #e2e8f0;
+      z-index: 9999;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+    }
+    #top-progress.active { opacity: 1; }
+    #top-progress .bar {
+      height: 100%;
+      width: 35%;
+      background: linear-gradient(90deg, var(--green), var(--yellow), var(--blue));
+      border-radius: 0 2px 2px 0;
+      animation: progress-slide 1.4s ease-in-out infinite;
+    }
+    @keyframes progress-slide {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(350%); }
+    }
+    .loading-card {
+      background: linear-gradient(135deg, #ecfdf5 0%, #eff6ff 100%);
+      border: 2px solid var(--green);
+      border-radius: 20px;
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 2rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 1.25rem;
+      box-shadow: var(--shadow);
+    }
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid #bbf7d0;
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 0.85s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-title { font-weight: 800; font-size: 1.1rem; color: var(--blue); margin: 0 0 0.35rem; }
+    .loading-msg { color: var(--muted); margin: 0; font-size: 0.95rem; }
+    .loading-timer { font-size: 0.85rem; color: var(--green); font-weight: 700; margin-top: 0.5rem; }
+    form.htmx-request button,
+    form.htmx-request button:hover {
+      opacity: 0.65;
+      cursor: wait;
+      transform: none;
+    }
+    button:disabled { opacity: 0.55; cursor: not-allowed; transform: none !important; }
+  </style>
+  <script>
+    let loadingTimer = null;
+    let loadingStart = null;
+    let logPolling = null;
+
+    const loadingMessages = {
+      '/sync': {
+        title: 'Sincronizando jogos…',
+        msg: 'Baixando calendário da Copa e cadastrando as 48 seleções.',
+        long: false
+      },
+      '/sync-profiles': {
+        title: 'Montando perfis estatísticos…',
+        msg: 'Consultando histórico de cada seleção. Pode levar até 5 minutos.',
+        long: true
+      },
+      '/analyze': {
+        title: 'Gerando leituras…',
+        msg: 'Aplicando filtro anti-zero-gols e pedindo narração ao narrador IA.',
+        long: false
+      }
+    };
+
+    function startElapsedTimer() {
+      loadingStart = Date.now();
+      if (loadingTimer) clearInterval(loadingTimer);
+      loadingTimer = setInterval(function() {
+        const el = document.getElementById('elapsed');
+        if (!el) return;
+        const secs = Math.floor((Date.now() - loadingStart) / 1000);
+        const mins = Math.floor(secs / 60);
+        const rem = secs % 60;
+        el.textContent = mins > 0
+          ? `Tempo: ${mins}min ${rem}s`
+          : `Tempo: ${secs}s`;
+      }, 1000);
+    }
+
+    function pollLogs() {
+      const body = document.getElementById('terminal-body');
+      if (!body) return;
+      
+      fetch('/logs')
+        .then(r => r.text())
+        .then(html => {
+          body.innerHTML = html;
+          body.scrollTop = body.scrollHeight;
+        });
+    }
+
+    function stopLoadingUI() {
+      document.getElementById('top-progress')?.classList.remove('active');
+      document.querySelectorAll('.actions button').forEach(function(b) { b.disabled = false; });
+      if (loadingTimer) { clearInterval(loadingTimer); loadingTimer = null; }
+      if (logPolling) { clearInterval(logPolling); logPolling = null; }
+      
+      // Keep modal visible for 2s after finish then hide
+      setTimeout(() => {
+        document.getElementById('terminal-modal').style.display = 'none';
+        document.getElementById('modal-overlay').style.display = 'none';
+      }, 2000);
+    }
+
+    function toggleCard(el) {
+      const card = el.closest('.card');
+      card.classList.toggle('collapsed');
+    }
+
+    document.addEventListener('htmx:beforeRequest', function(evt) {
+      const path = evt.detail.pathInfo.requestPath;
+      const info = loadingMessages[path];
+      if (!info) return;
+
+      document.getElementById('modal-overlay').style.display = 'block';
+      const modal = document.getElementById('terminal-modal');
+      modal.style.display = 'flex';
+      document.getElementById('terminal-title').textContent = info.title;
+      document.getElementById('terminal-body').innerHTML = '<pre>[SISTEMA] Aguardando conexão...</pre>';
+      
+      document.getElementById('top-progress')?.classList.add('active');
+      document.querySelectorAll('.actions button').forEach(function(b) { b.disabled = true; });
+      
+      if (info.long) startElapsedTimer();
+      logPolling = setInterval(pollLogs, 1000);
+    });
+
+    document.addEventListener('htmx:afterRequest', stopLoadingUI);
+    document.addEventListener('htmx:responseError', stopLoadingUI);
+
+    const criteriaExplanations = {
+      'combined_avg_goals': {
+        title: 'Média Combinada de Gols',
+        content: 'É o <strong>termômetro de agitação</strong> do jogo. Somamos tudo o que os dois times fazem (gols que marcam e gols que levam) e tiramos a média. Se a média é alta, significa que são times que costumam estar envolvidos em jogos movimentados.'
+      },
+      'max_zero_zero_rate': {
+        title: 'Pior Taxa de 0-0',
+        content: 'Olhamos o histórico de 0-0 de cada time. Pegamos o time que tem a <strong>maior</strong> taxa de empates sem gols. Se o pior dos dois times tem muitos 0-0, o risco de um jogo sonolento é alto.'
+      },
+      'min_over_05_rate': {
+        title: 'Menor Taxa de Over 0,5',
+        content: 'Verificamos em quantos jogos de cada time saiu <strong>pelo menos um gol</strong>. Queremos times que garantam emoção em quase todos os seus jogos históricos.'
+      },
+      'both_teams_score_rate': {
+        title: 'Média de Ambas Marcam (BTTS)',
+        content: 'É a probabilidade de <strong>trocação</strong>. Calculamos a média de vezes em que os dois times balançaram as redes no mesmo jogo. Quando os dois marcam, o 0-0 é impossível!'
+      },
+      'home_offense': {
+        title: 'Poder de Fogo (Mandante)',
+        content: 'Quantos gols, em média, o time da casa faz por partida. Exigimos um mínimo para garantir que o time tenha capacidade real de furar a defesa adversária.'
+      },
+      'away_offense': {
+        title: 'Poder de Fogo (Visitante)',
+        content: 'Quantos gols, em média, o time visitante faz por partida. Um time que não faz gols dificilmente ajuda a fugir do zero!'
+      }
+    };
+
+    function showHelp(criterionKey) {
+      const info = criteriaExplanations[criterionKey];
+      if (!info) return;
+      
+      document.getElementById('didactic-title').textContent = info.title;
+      document.getElementById('didactic-content').innerHTML = info.content;
+      document.getElementById('modal-overlay').style.display = 'block';
+      document.getElementById('didactic-modal').style.display = 'flex';
+    }
+
+    function closeDidactic() {
+      document.getElementById('didactic-modal').style.display = 'none';
+      // Only hide overlay if terminal is not showing
+      if (document.getElementById('terminal-modal').style.display !== 'flex') {
+        document.getElementById('modal-overlay').style.display = 'none';
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="top-progress" aria-hidden="true"><div class="bar"></div></div>
+  
+  <div class="modal-overlay" id="modal-overlay" onclick="closeDidactic()"></div>
+  <div class="terminal-modal" id="terminal-modal">
+    <div class="terminal-header">
+      <span id="terminal-title" style="font-weight: 800; font-size: 0.9rem;">Terminal Palpitaria FC</span>
+      <div style="display: flex; gap: 0.5rem;">
+        <span style="width: 12px; height: 12px; background: #ef4444; border-radius: 50%;"></span>
+        <span style="width: 12px; height: 12px; background: #fbbf24; border-radius: 50%;"></span>
+        <span style="width: 12px; height: 12px; background: #22c55e; border-radius: 50%;"></span>
+      </div>
+    </div>
+    <div class="terminal-body" id="terminal-body">
+      <pre>[SISTEMA] Inicializando...</pre>
+    </div>
+    <div class="terminal-footer">
+      <span id="elapsed">Tempo: 0s</span>
+      <span>Vision v1.0</span>
+    </div>
+  </div>
+
+  <div class="didactic-modal" id="didactic-modal">
+    <div class="didactic-header">
+      <h3 id="didactic-title" style="margin:0; font-weight:800; color:var(--blue);">Explicação</h3>
+      <button class="didactic-close" onclick="closeDidactic()">×</button>
+    </div>
+    <div class="didactic-body" id="didactic-content">
+      <!-- Content injected via JS -->
+    </div>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/assets/logo.png" alt="Palpitaria FC" style="width: 100%; height: auto; max-width: 180px;">
+    </div>
+    <nav>
+      <ul class="nav-list">
+        <li class="nav-item">
+          <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">
+            🏠 Home
+          </a>
+        </li>
+        <li class="nav-item">
+          <a href="/branches" class="{% if request.url.path.startswith('/branches') %}active{% endif %}">
+            🏢 Filiais (P&L)
+          </a>
+        </li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

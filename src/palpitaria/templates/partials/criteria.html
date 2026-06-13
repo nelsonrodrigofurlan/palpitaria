@@ -1,0 +1,18 @@
+<table>
+  <thead>
+    <tr><th>Critério</th><th>Valor</th><th>Limiar</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for c in a.criteria %}
+    <tr>
+      <td>
+        {{ c.detail }}
+        <button class="help-btn" onclick="showHelp('{{ c.name }}')" title="Clique para entender este critério">?</button>
+      </td>
+      <td>{{ c.value }}</td>
+      <td>{{ c.threshold }}</td>
+      <td class="{% if c.passed %}pass{% else %}fail{% endif %}">{% if c.passed %}OK{% else %}FALHOU{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

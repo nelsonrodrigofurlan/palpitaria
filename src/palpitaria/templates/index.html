@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Palpitaria FC{% endblock %}
+{% block content %}
+<header style="margin-bottom: 2rem;">
+  <p class="sub" style="font-size: 1.1rem; font-weight: 600; color: var(--blue);">Análise preditiva · Copa 2026 · jogos de hoje</p>
+</header>
+
+{% if not has_token %}
+<div class="alert">
+  ⚠️ <strong>Atenção:</strong> Configure o <code>FOOTBALL_DATA_TOKEN</code> no seu arquivo <code>.env</code> para puxar os dados da Copa.
+</div>
+{% elif profiles_ready < profiles_total %}
+<div class="alert">
+  ⚠️ <strong>Perfis incompletos:</strong> {{ profiles_ready }}/{{ profiles_total }} seleções prontas.
+  Rode o passo <strong>2. Atualizar Perfis</strong> até completar (~5 min). Sem isso, todos os jogos serão descartados.
+</div>
+{% endif %}
+
+<div class="actions">
+  <form hx-post="/sync" hx-target="#sync-result" hx-swap="innerHTML">
+    <button type="submit" data-loading="sync">1. Sincronizar Jogos</button>
+  </form>
+  <form hx-post="/sync-profiles" hx-target="#sync-result" hx-swap="innerHTML">
+    <button type="submit" class="secondary" data-loading="profiles">2. Atualizar Perfis (~5 min)</button>
+  </form>
+  <form hx-post="/analyze" hx-target="#sync-result" hx-swap="innerHTML">
+    <button type="submit" class="yellow" data-loading="analyze">3. Gerar Leituras de Hoje (LLM)</button>
+  </form>
+</div>
+
+<div id="sync-result" aria-live="polite" aria-busy="false"></div>
+
+<section>
+  <h2>🔥 Candidatos ao Show — hoje ({{ candidates|length }})</h2>
+  {% if candidates %}
+    {% for a in candidates %}
+    <div class="card collapsed">
+      <div class="card-header" onclick="toggleCard(this)">
+        <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+          <div class="match-title" style="display: flex; align-items: center; gap: 0.75rem;">
+            {% if a.home_crest %}<img src="{{ a.home_crest }}" alt="" style="height: 24px; width: auto;">{% endif %}
+            {{ a.home_name }} x {{ a.away_name }}
+            {% if a.away_crest %}<img src="{{ a.away_crest }}" alt="" style="height: 24px; width: auto;">{% endif %}
+          </div>
+          <div class="meta" style="margin: 0;">
+            📅 {{ a.utc_date | kickoff(app_timezone) }} ({{ app_timezone }})
+            {% if a.group_name %} · 🏆 {{ a.group_name }}{% endif %}
+            · 📊 Score: <strong>{{ a.goal_potential_score }}/100</strong>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <div class="badge ok">No Alvo</div>
+          <span class="toggle-icon">▼</span>
+        </div>
+      </div>
+
+      <div class="card-content" style="margin-top: 1.5rem;">
+        {% if a.llm_explanation %}
+        <div class="llm-box">
+          {{ a.llm_explanation | safe }}
+        </div>
+        {% endif %}
+
+        {% if a.home_insights or a.away_insights %}
+        <div class="insights-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+          <div class="insight-card" style="background: #f8fafc; padding: 1rem; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <strong>🔍 Bastidores {{ a.home_name }}</strong>
+            {% if a.home_insights %}
+              <p style="font-size: 0.8rem; margin: 0.5rem 0;">{{ a.home_insights.backstage_info }}</p>
+              <ul style="font-size: 0.75rem; padding-left: 1rem; margin: 0;">
+                {% for item in a.home_insights.key_insights %}
+                  <li>{{ item }}</li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <p style="font-size: 0.8rem; color: var(--muted);">Sem informações de bastidores recentes.</p>
+            {% endif %}
+          </div>
+          <div class="insight-card" style="background: #f8fafc; padding: 1rem; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <strong>🔍 Bastidores {{ a.away_name }}</strong>
+            {% if a.away_insights %}
+              <p style="font-size: 0.8rem; margin: 0.5rem 0;">{{ a.away_insights.backstage_info }}</p>
+              <ul style="font-size: 0.75rem; padding-left: 1rem; margin: 0;">
+                {% for item in a.away_insights.key_insights %}
+                  <li>{{ item }}</li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <p style="font-size: 0.8rem; color: var(--muted);">Sem informações de bastidores recentes.</p>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+        {% include "partials/criteria.html" %}
+
+        {% if a.picks %}
+        <div class="scenarios">
+          {% for p in a.picks %}
+          <div class="scenario" style="border-left-color: {% if p.branch == 'over_1_5' %}var(--blue){% else %}var(--yellow){% endif %};">
+            <strong>{{ p.branch | replace('_', ' ') | upper }} — {{ p.verdict }}</strong>
+            <div><em>Pessimista:</em> {{ p.pessimistic }}</div>
+            <div><em>Realista:</em> {{ p.realistic }}</div>
+            <div><em>Otimista:</em> {{ p.optimistic }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="card" style="text-align: center; color: var(--muted);">
+    {% if today_count == 0 and upcoming_count > 0 %}
+    <p>Nenhum jogo hoje ({{ today_label }}). Há {{ upcoming_count }} jogos nos próximos dias — volte no dia da partida.</p>
+    {% elif today_count == 0 %}
+    <p>Nenhum jogo programado. Clique em "Sincronizar" para puxar o calendário da Copa.</p>
+    {% else %}
+    <p>{{ today_count }} jogo(s) hoje, mas nenhum passou no filtro anti-zero-gols. Veja a seção abaixo ou rode "Gerar Leituras de Hoje".</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+<section>
+  <h2>🚫 Fugir do Zero — hoje ({{ discarded|length }})</h2>
+  {% for a in discarded %}
+  <div class="card collapsed" style="opacity: 0.8;">
+    <div class="card-header" onclick="toggleCard(this)">
+      <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+        <div class="match-title" style="color: var(--muted); display: flex; align-items: center; gap: 0.75rem;">
+          {% if a.home_crest %}<img src="{{ a.home_crest }}" alt="" style="height: 24px; width: auto;">{% endif %}
+          {{ a.home_name }} x {{ a.away_name }}
+          {% if a.away_crest %}<img src="{{ a.away_crest }}" alt="" style="height: 24px; width: auto;">{% endif %}
+        </div>
+        <div class="meta" style="margin: 0;">
+          📅 {{ a.utc_date | kickoff(app_timezone) }} ({{ app_timezone }})
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <div class="badge err">Risco de 0-0</div>
+        <span class="toggle-icon">▼</span>
+      </div>
+    </div>
+
+    <div class="card-content" style="margin-top: 1.5rem;">
+      <ul style="font-size: 0.85rem; color: #991b1b; padding-left: 1.2rem;">
+        {% for reason in a.exclusion_reasons %}
+        <li>{{ reason }}</li>
+        {% endfor %}
+      </ul>
+
+      {% if a.llm_explanation %}
+      <div class="llm-box" style="background:#fef2f2;border-color:#fecaca;color:#991b1b;font-style:normal;">
+        {{ a.llm_explanation | safe }}
+      </div>
+      {% endif %}
+
+      {% if a.home_insights or a.away_insights %}
+      <div class="insights-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+        <div class="insight-card" style="background: #fff1f2; padding: 1rem; border-radius: 12px; border: 1px solid #fecaca;">
+          <strong>🔍 Bastidores {{ a.home_name }}</strong>
+          {% if a.home_insights %}
+            <p style="font-size: 0.8rem; margin: 0.5rem 0;">{{ a.home_insights.backstage_info }}</p>
+            <ul style="font-size: 0.75rem; padding-left: 1rem; margin: 0;">
+              {% for item in a.home_insights.key_insights %}
+                <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p style="font-size: 0.8rem; color: var(--muted);">Sem informações de bastidores recentes.</p>
+          {% endif %}
+        </div>
+        <div class="insight-card" style="background: #fff1f2; padding: 1rem; border-radius: 12px; border: 1px solid #fecaca;">
+          <strong>🔍 Bastidores {{ a.away_name }}</strong>
+          {% if a.away_insights %}
+            <p style="font-size: 0.8rem; margin: 0.5rem 0;">{{ a.away_insights.backstage_info }}</p>
+            <ul style="font-size: 0.75rem; padding-left: 1rem; margin: 0;">
+              {% for item in a.away_insights.key_insights %}
+                <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p style="font-size: 0.8rem; color: var(--muted);">Sem informações de bastidores recentes.</p>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if a.criteria %}
+      <details open>
+        <summary style="font-size: 0.8rem; cursor: pointer; color: var(--muted); margin-top: 0.75rem;">Critérios numéricos</summary>
+        {% include "partials/criteria.html" %}
+      </details>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

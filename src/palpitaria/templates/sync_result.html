@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Resultado — Palpitaria FC{% endblock %}
+{% block content %}
+<div class="card">
+  <h1 style="margin-top:0;">Operação concluída</h1>
+  {% if message %}<p>{{ message }}</p>{% endif %}
+  {% if ingest %}
+  <p><strong>Jogos:</strong> {{ ingest }}</p>
+  {% endif %}
+  {% if profiles is not none %}
+  <p><strong>Perfis:</strong> {{ profiles }} seleções</p>
+  {% endif %}
+  <p><a href="/">← Voltar ao painel</a></p>
+  {% if redirect %}
+  <p class="loading-msg">Redirecionando…</p>
+  <script>setTimeout(function(){ window.location.href = '/'; }, 1200);</script>
+  {% endif %}
+</div>
+{% endblock %}

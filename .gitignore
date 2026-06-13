@@ -1,0 +1,27 @@
+# Environment
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Data
+data/
+*.db
+*.sqlite3
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Reports / cache
+reports/
+.cache/
+
+# Docker
+*.log
