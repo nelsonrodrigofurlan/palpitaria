@@ -2,7 +2,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import os
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +14,35 @@ def _strip_env(value: object) -> object:
 
 def _is_cloud_run() -> bool:
     return bool(os.getenv("K_SERVICE"))
+
+
+def _get_env(*names: str) -> str | None:
+    """Lê variável de ambiente tolerando espaços acidentais no nome (ex.: 'DATABASE_URL ')."""
+    normalized = {key.strip(): value for key, value in os.environ.items()}
+    for name in names:
+        raw = normalized.get(name)
+        if raw and str(raw).strip():
+            return str(_strip_env(raw))
+    return None
+
+
+def _resolve_database_url() -> str | None:
+    """Lê URL do Postgres direto do ambiente (Cloud Run runtime)."""
+    return _get_env("DATABASE_URL", "DATABASE_URI", "SUPABASE_DATABASE_URL", "SUPABASE_DB_URL")
+
+
+def _database_env_diagnostics() -> dict:
+    keys = ("DATABASE_URL", "DATABASE_URI", "SUPABASE_DATABASE_URL", "SUPABASE_DB_URL")
+    normalized = {key.strip(): key for key in os.environ}
+    result = {}
+    for key in keys:
+        actual = normalized.get(key)
+        result[key] = {
+            "present": actual is not None,
+            "length": len(os.environ.get(actual, "")) if actual else 0,
+            "env_key_used": actual if actual and actual != key else None,
+        }
+    return result
 
 
 # Cloud Run: variáveis vêm só do runtime (aba Variáveis do serviço), nunca do build.
@@ -50,6 +79,15 @@ class Settings(BaseSettings):
     def strip_quotes(cls, value: object) -> object:
         return _strip_env(value)
 
+    @model_validator(mode="before")
+    @classmethod
+    def inject_database_url_from_env(cls, data: object) -> object:
+        payload = dict(data) if isinstance(data, dict) else {}
+        resolved = _resolve_database_url()
+        if resolved:
+            payload["database_url"] = resolved
+        return payload
+
     @property
     def config_source(self) -> str:
         return "cloud_run_env" if _is_cloud_run() else "local_env_file"
@@ -82,12 +120,33 @@ class Settings(BaseSettings):
         """Cloud Run sem DATABASE_URL válida — app sobe, mas /health avisa."""
         if not _is_cloud_run():
             return None
-        if not self.database_url or self.uses_sqlite:
-            return (
-                "DATABASE_URL ausente ou inválida no Cloud Run. "
-                "Configure em Serviço → Editar → Variáveis de ambiente (runtime), não no Cloud Build."
+        if self.database_url and not self.uses_sqlite:
+            return None
+
+        diag = _database_env_diagnostics()
+        if not any(item["present"] and item["length"] > 0 for item in diag.values()):
+            typo = next(
+                (orig for orig in os.environ if orig.strip() == "DATABASE_URL" and orig != "DATABASE_URL"),
+                None,
             )
-        return None
+            if typo:
+                return (
+                    f"Nome da variável com espaço extra: '{typo}'. "
+                    "Renomeie para DATABASE_URL (sem espaço) no Cloud Run."
+                )
+            return (
+                "DATABASE_URL não chegou nesta revisão do Cloud Run. "
+                "As outras variáveis (FOOTBALL_DATA_TOKEN, OPENAI_API_KEY) estão OK, "
+                "mas DATABASE_URL não está no ambiente do container — confira o YAML da revisão ATIVA. "
+                "Se o Cloud Build redeployar, ele pode estar criando revisão sem DATABASE_URL: "
+                "edite o serviço, confirme a variável e clique Implantar (sem rebuild)."
+            )
+        if diag.get("DATABASE_URL", {}).get("present") and diag["DATABASE_URL"]["length"] == 0:
+            return "DATABASE_URL existe mas está vazia — apague e recrie a variável no Cloud Run."
+        return (
+            "DATABASE_URL inválida (não é Postgres). "
+            "Use postgresql://postgres:SENHA@db....supabase.co:5432/postgres sem aspas."
+        )
 
     football_data_base_url: str = "https://api.football-data.org/v4"
     world_cup_code: str = "WC"
@@ -114,7 +173,12 @@ class Settings(BaseSettings):
     @property
     def has_llm(self) -> bool:
         key = self.openai_api_key
-        return bool(key and key not in ("your_openai_key_here", "your_gemini_key_here"))
+        if not key or key in ("your_openai_key_here", "your_gemini_key_here"):
+            return False
+        # Modelo no lugar da chave (erro comum no Cloud Run)
+        if key.startswith("~") or key.startswith("google/") or key.startswith("openai/"):
+            return False
+        return True
 
     @property
     def llm_provider_label(self) -> str:

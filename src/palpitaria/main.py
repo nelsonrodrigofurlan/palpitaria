@@ -3,6 +3,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from datetime import datetime
+import os
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
@@ -348,6 +349,10 @@ def health(db: Session = Depends(get_db)) -> dict:
     if settings.database_config_error:
         payload["status"] = "misconfigured"
         payload["database_config_error"] = settings.database_config_error
+        from palpitaria.config import _database_env_diagnostics
+
+        payload["database_env"] = _database_env_diagnostics()
+        payload["revision"] = os.getenv("K_REVISION")
     try:
         payload["teams"] = db.query(Team).count()
         payload["fixtures"] = db.query(Fixture).count()
