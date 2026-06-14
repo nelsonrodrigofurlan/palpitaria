@@ -240,7 +240,10 @@ def run_analysis(request: Request, db: Session = Depends(get_db)):
             candidates += 1
             add_log("  -> Candidato qualificado!")
         else:
-            add_log(f"  -> Descartado: {', '.join(analysis.exclusion_reasons)}")
+            pick_hint = ""
+            if analysis.best_pick:
+                pick_hint = f" | Palpite alt.: {analysis.best_pick.get('market', '—')}"
+            add_log(f"  -> Descartado (Over): {', '.join(analysis.exclusion_reasons)}{pick_hint}")
 
     add_log(f"Concluído: {explained} leituras, {candidates} candidatos.")
 

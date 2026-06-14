@@ -156,13 +156,23 @@ class Settings(BaseSettings):
     app_timezone: str = "America/Sao_Paulo"
 
     min_combined_avg_goals: float = 2.0
+    strong_combined_avg_goals: float = 3.5
     max_zero_zero_rate: float = 0.12
+    strong_max_zero_zero_rate: float = 0.05
     min_both_score_rate: float = 0.55
+    strong_both_score_rate: float = 0.70
     min_over_05_historical_rate: float = 0.88
+    strong_over_05_historical_rate: float = 0.95
+    min_offense_goals: float = 0.8
+    strong_offense_goals: float = 1.5
 
     # Copa — perfis híbridos API+web sempre; refresh configurável
-    wc_web_profile_min_matches: int = 3
+    wc_web_profile_min_matches: int = 1  # estreias Copa: 1 placar explícito já destrava o filtro
     wc_web_profile_refresh_hours: int = 0  # 0 = refresh every analyze run
+
+    # Leitura LLM exibida no card (comentário inicial)
+    llm_explanation_max_chars: int = 1500
+    llm_explanation_max_tokens: int = 2000
 
     @property
     def data_dir(self) -> Path:

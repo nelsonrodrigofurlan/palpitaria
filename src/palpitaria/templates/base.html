@@ -193,6 +193,9 @@
     th { color: var(--muted); font-weight: 600; }
     .pass { color: var(--green); font-weight: 700; }
     .fail { color: var(--red); font-weight: 700; }
+    .crit-fail { color: var(--red); font-weight: 700; }
+    .crit-ok { color: var(--green); font-weight: 700; }
+    .crit-strong { color: #b45309; font-weight: 800; }
     /* Insights Grid */
     .insights-grid {
       display: grid;
@@ -298,6 +301,9 @@
       font-style: italic;
       color: #1e40af;
       line-height: 1.7;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow: visible;
     }
     /* Collapsible Cards */
     .card-content {

@@ -1,0 +1,24 @@
+{% if a.best_pick %}
+<div class="best-recommendation" style="margin-top: 1.5rem; padding: 1.5rem; background: {{ bg }}; border-radius: 20px; border: 1px solid {{ border }};">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <strong style="font-size: 1.1rem; color: {{ title_color }}; text-transform: uppercase; letter-spacing: 0.05em;">{{ title }}</strong>
+    <div class="badge {% if a.best_pick.verdict == 'STRONG' %}ok{% else %}warn{% endif %}">{{ a.best_pick.verdict }}</div>
+  </div>
+  <div style="font-size: 1.4rem; font-weight: 800; color: var(--text); margin-bottom: 0.5rem;">
+    {{ a.best_pick.market }}
+  </div>
+  <p style="font-size: 0.95rem; color: {{ text_color }}; margin: 0; line-height: 1.6;">
+    {{ a.best_pick.reason }}
+  </p>
+  {% if subtitle %}
+  <p style="font-size: 0.8rem; color: var(--muted); margin: 0.75rem 0 0;">
+    {{ subtitle }}
+  </p>
+  {% endif %}
+  {% if a.best_pick.web_factor %}
+  <p style="font-size: 0.85rem; color: #64748b; margin: 0.75rem 0 0; font-style: italic;">
+    🌐 {{ a.best_pick.web_factor }}
+  </p>
+  {% endif %}
+</div>
+{% endif %}

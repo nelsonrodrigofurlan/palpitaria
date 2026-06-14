@@ -20,6 +20,43 @@ class CriterionResult:
     threshold: str
     passed: bool
     detail: str
+    level: str = "fail"  # fail | ok | strong
+
+
+def _criterion_level(
+    value: float,
+    *,
+    passed: bool,
+    higher_is_better: bool,
+    strong_at: float,
+) -> str:
+    if not passed:
+        return "fail"
+    if higher_is_better:
+        return "strong" if value >= strong_at else "ok"
+    return "strong" if value <= strong_at else "ok"
+
+
+def _make_criterion(
+    name: str,
+    value: float,
+    threshold: str,
+    passed: bool,
+    detail: str,
+    *,
+    higher_is_better: bool,
+    strong_at: float,
+) -> CriterionResult:
+    return CriterionResult(
+        name=name,
+        value=round(value, 3),
+        threshold=threshold,
+        passed=passed,
+        detail=detail,
+        level=_criterion_level(
+            value, passed=passed, higher_is_better=higher_is_better, strong_at=strong_at
+        ),
+    )
 
 
 @dataclass
@@ -54,6 +91,10 @@ class FixtureAnalysis:
         if self.venue_city and self.venue_state:
             return f"{self.venue_city}, {self.venue_state}"
         return self.venue_city or self.venue_state
+
+    @property
+    def strong_criteria_count(self) -> int:
+        return sum(1 for c in self.criteria if c.level == "strong")
 
 
 @dataclass
@@ -153,47 +194,59 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
     avg_btts = (home_profile.both_teams_score_rate + away_profile.both_teams_score_rate) / 2
 
     criteria = [
-        CriterionResult(
-            name="combined_avg_goals",
-            value=round(combined_avg, 3),
-            threshold=f">= {settings.min_combined_avg_goals}",
-            passed=combined_avg >= settings.min_combined_avg_goals,
-            detail="Média combinada de gols marcados e sofridos",
+        _make_criterion(
+            "combined_avg_goals",
+            combined_avg,
+            f">= {settings.min_combined_avg_goals} gols/jogo",
+            combined_avg >= settings.min_combined_avg_goals,
+            "Média combinada de gols marcados e sofridos",
+            higher_is_better=True,
+            strong_at=settings.strong_combined_avg_goals,
         ),
-        CriterionResult(
-            name="max_zero_zero_rate",
-            value=round(max_zero_zero, 3),
-            threshold=f"<= {settings.max_zero_zero_rate}",
-            passed=max_zero_zero <= settings.max_zero_zero_rate,
-            detail="Pior taxa de 0-0 entre as duas seleções",
+        _make_criterion(
+            "max_zero_zero_rate",
+            max_zero_zero,
+            f"<= {settings.max_zero_zero_rate} ({settings.max_zero_zero_rate:.0%})",
+            max_zero_zero <= settings.max_zero_zero_rate,
+            "Pior taxa de 0-0 entre as duas seleções",
+            higher_is_better=False,
+            strong_at=settings.strong_max_zero_zero_rate,
         ),
-        CriterionResult(
-            name="min_over_05_rate",
-            value=round(min_over_05, 3),
-            threshold=f">= {settings.min_over_05_historical_rate}",
-            passed=min_over_05 >= settings.min_over_05_historical_rate,
-            detail="Menor taxa histórica de over 0,5",
+        _make_criterion(
+            "min_over_05_rate",
+            min_over_05,
+            f">= {settings.min_over_05_historical_rate} ({settings.min_over_05_historical_rate:.0%})",
+            min_over_05 >= settings.min_over_05_historical_rate,
+            "Menor taxa histórica de over 0,5",
+            higher_is_better=True,
+            strong_at=settings.strong_over_05_historical_rate,
         ),
-        CriterionResult(
-            name="both_teams_score_rate",
-            value=round(avg_btts, 3),
-            threshold=f">= {settings.min_both_score_rate}",
-            passed=avg_btts >= settings.min_both_score_rate,
-            detail="Média de jogos em que ambas marcam",
+        _make_criterion(
+            "both_teams_score_rate",
+            avg_btts,
+            f">= {settings.min_both_score_rate} ({settings.min_both_score_rate:.0%})",
+            avg_btts >= settings.min_both_score_rate,
+            "Média de jogos em que ambas marcam",
+            higher_is_better=True,
+            strong_at=settings.strong_both_score_rate,
         ),
-        CriterionResult(
-            name="home_offense",
-            value=round(home_profile.avg_goals_scored, 3),
-            threshold=">= 0.8",
-            passed=home_profile.avg_goals_scored >= 0.8,
-            detail=f"{localize_team_name(home.name, home.external_id)} — gols marcados/jogo",
+        _make_criterion(
+            "home_offense",
+            home_profile.avg_goals_scored,
+            f">= {settings.min_offense_goals} gols/jogo",
+            home_profile.avg_goals_scored >= settings.min_offense_goals,
+            f"{localize_team_name(home.name, home.external_id)} — gols marcados/jogo",
+            higher_is_better=True,
+            strong_at=settings.strong_offense_goals,
         ),
-        CriterionResult(
-            name="away_offense",
-            value=round(away_profile.avg_goals_scored, 3),
-            threshold=">= 0.8",
-            passed=away_profile.avg_goals_scored >= 0.8,
-            detail=f"{localize_team_name(away.name, away.external_id)} — gols marcados/jogo",
+        _make_criterion(
+            "away_offense",
+            away_profile.avg_goals_scored,
+            f">= {settings.min_offense_goals} gols/jogo",
+            away_profile.avg_goals_scored >= settings.min_offense_goals,
+            f"{localize_team_name(away.name, away.external_id)} — gols marcados/jogo",
+            higher_is_better=True,
+            strong_at=settings.strong_offense_goals,
         ),
     ]
     analysis.criteria = criteria
@@ -207,7 +260,18 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
     analysis.goal_potential_score = round((passed_weight / len(criteria)) * 100, 1)
 
     if not analysis.excluded:
-        analysis.best_pick = _select_best_pick(analysis, home_profile, away_profile, combined_avg, min_over_05)
+        analysis.best_pick = _select_best_pick(
+            analysis, home_profile, away_profile, combined_avg, min_over_05
+        )
+    else:
+        analysis.best_pick = _select_alternate_pick(
+            analysis,
+            home_profile,
+            away_profile,
+            combined_avg,
+            max_zero_zero,
+            avg_btts,
+        )
 
     analysis.home_stats_meta = _profile_stats_meta(home_profile)
     analysis.away_stats_meta = _profile_stats_meta(away_profile)
@@ -271,7 +335,8 @@ def _select_best_pick(
         return {
             "market": "OVER 2.5 GOALS",
             "verdict": "STRONG",
-            "reason": f"Média altíssima ({combined_avg:.1f}) e histórico de Over 2.5 em {over_25_rate:.0%}. Cenário de jogo muito aberto."
+            "reason": f"Média altíssima ({combined_avg:.1f}) e histórico de Over 2.5 em {over_25_rate:.0%}. Cenário de jogo muito aberto.",
+            "scope": "goals",
         }
 
     # 2. Dominância Clara (1X2)
@@ -281,7 +346,8 @@ def _select_best_pick(
         return {
             "market": f"VITÓRIA: {fav_name}",
             "verdict": "STRONG" if fav_rate >= 0.75 else "CANDIDATE",
-            "reason": f"Superioridade técnica clara. {fav_name} venceu {fav_rate:.0%} dos jogos recentes."
+            "reason": f"Superioridade técnica clara. {fav_name} venceu {fav_rate:.0%} dos jogos recentes.",
+            "scope": "goals",
         }
 
     # 3. Segurança no Over 1.5
@@ -289,14 +355,76 @@ def _select_best_pick(
         return {
             "market": "OVER 1.5 GOALS",
             "verdict": "STRONG",
-            "reason": f"Histórico sólido de pelo menos 2 gols ({over_15_rate:.0%}) com média combinada de {combined_avg:.1f}."
+            "reason": f"Histórico sólido de pelo menos 2 gols ({over_15_rate:.0%}) com média combinada de {combined_avg:.1f}.",
+            "scope": "goals",
         }
 
     # 4. Base de Segurança: Over 0.5 (Anti-Zero-Gols)
     return {
         "market": "OVER 0.5 GOALS",
         "verdict": "STRONG" if confidence >= 85 else "CANDIDATE",
-        "reason": f"Filtro anti-zero-gols aprovado com Score {confidence}. Média combinada de {combined_avg:.1f} gols/jogo."
+        "reason": f"Filtro anti-zero-gols aprovado com Score {confidence}. Média combinada de {combined_avg:.1f} gols/jogo.",
+        "scope": "goals",
+    }
+
+
+def _select_alternate_pick(
+    analysis: FixtureAnalysis,
+    home_profile,
+    away_profile,
+    combined_avg: float,
+    max_zero_zero: float,
+    avg_btts: float,
+) -> dict:
+    """Palpite fora do filtro de gols — 1X2 ou lay correct score."""
+    home_win_rate = home_profile.win_rate
+    away_win_rate = away_profile.win_rate
+    win_diff = abs(home_win_rate - away_win_rate)
+
+    if win_diff >= 0.25:
+        fav_name = analysis.home_name if home_win_rate > away_win_rate else analysis.away_name
+        fav_rate = max(home_win_rate, away_win_rate)
+        return {
+            "market": f"VITÓRIA: {fav_name}",
+            "verdict": "STRONG" if fav_rate >= 0.70 else "CANDIDATE",
+            "reason": (
+                f"Fora do filtro de gols, mas {fav_name} domina o histórico recente "
+                f"({fav_rate:.0%} de vitórias). Leitura de favoritismo claro no 1X2."
+            ),
+            "scope": "alternate",
+        }
+
+    if max_zero_zero >= settings.max_zero_zero_rate or avg_btts < settings.min_both_score_rate:
+        return {
+            "market": "LAY CORRECT SCORE: 0-0",
+            "verdict": "CANDIDATE",
+            "reason": (
+                f"Risco elevado de jogo fechado (0-0 em {max_zero_zero:.0%} ou BTTS {avg_btts:.0%}). "
+                "Lay no placar exato 0-0 como leitura alternativa — não é entrada no filtro de gols."
+            ),
+            "scope": "alternate",
+        }
+
+    if win_diff >= 0.15:
+        fav_name = analysis.home_name if home_win_rate > away_win_rate else analysis.away_name
+        return {
+            "market": f"VITÓRIA: {fav_name}",
+            "verdict": "CANDIDATE",
+            "reason": (
+                f"Leve favoritismo de {fav_name} com média combinada de {combined_avg:.1f} gols/jogo. "
+                "Palpite alternativo em resultado seco."
+            ),
+            "scope": "alternate",
+        }
+
+    return {
+        "market": "LAY CORRECT SCORE: 0-0",
+        "verdict": "CANDIDATE",
+        "reason": (
+            f"Sem favorito claro (vitórias {home_win_rate:.0%} x {away_win_rate:.0%}). "
+            "Lay 0-0 como leitura conservadora fora dos mercados Over."
+        ),
+        "scope": "alternate",
     }
 
 

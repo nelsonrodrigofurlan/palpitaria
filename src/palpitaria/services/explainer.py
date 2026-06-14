@@ -21,9 +21,26 @@ Regras de Ouro:
    - Parágrafo 3: Alertas de risco específicos (ex: "O árbitro rigoroso pode gerar muitas interrupções, dificultando o Over 1.5").
 
 Tom de voz: Profissional, analítico, direto ao ponto. Use termos como 'valor', 'exposição', 'leitura de fluxo', 'equilíbrio'.
-Máximo 3 parágrafos. Não invente dados.
+Máximo 3 parágrafos, até 1500 caracteres no total. Sempre conclua a última frase — nunca pare no meio.
+Não invente dados.
 7. ELENCO: Só cite jogadores presentes em home_insights/away_insights. "Não convocado" ≠ "lesionado/fora". Se não estiver nos dados, não mencione.
 """
+
+EXPLANATION_MAX_CHARS = 1500
+
+
+def _finalize_explanation(text: str, max_chars: int | None = None) -> str:
+    """Garante texto completo até o limite de caracteres (corta só em fim de frase)."""
+    limit = max_chars or settings.llm_explanation_max_chars
+    cleaned = text.strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    chunk = cleaned[:limit]
+    for sep in (". ", ".\n", "! ", "? ", ".\""):
+        idx = chunk.rfind(sep)
+        if idx > limit // 2:
+            return chunk[: idx + len(sep)].strip()
+    return chunk.rstrip() + "…"
 
 PICK_REFINE_SYSTEM = """Você decide a recomendação de mercado da Palpitaria FC para UM jogo.
 
@@ -50,21 +67,58 @@ Retorne SOMENTE JSON válido:
 }
 """
 
+EXCLUDED_PICK_REFINE_SYSTEM = """Você decide o PALPITE ALTERNATIVO da Palpitaria FC para UM jogo FORA do filtro anti-zero-gols.
+
+O jogo foi DESCARTADO para mercados Over (0.5/1.5/2.5). Isso NÃO impede palpite em outros mercados.
+
+Entradas: numeric_suggestion, home_stats, away_stats, home_insights, away_insights, match_context, criteria, exclusion_reasons.
+
+Mercados permitidos (escolha UM):
+- VITÓRIA: [nome do time] — favoritismo claro, jogo tende a ser unilateral
+- LAY CORRECT SCORE: 0-0 — jogo fechado mas leitura de que haverá pelo menos 1 gol
+- LAY CORRECT SCORE: 1-0 — favorito vence magro, padrão de vitória mínima
+- LAY CORRECT SCORE: 2-0 — favorito domina sem trocação (BTTS baixo)
+
+Regras:
+- NUNCA recomende OVER 0.5/1.5/2.5 — o filtro de gols já vetou.
+- Integre bastidores + histórico web.
+- Explique por que este mercado faz sentido APESAR do descarte no filtro de gols.
+- Não invente dados.
+
+Retorne SOMENTE JSON válido:
+{
+  "market": "VITÓRIA: Alemanha",
+  "verdict": "STRONG|CANDIDATE",
+  "reason": "2-3 frases objetivas",
+  "web_factor": "1 frase: como histórico web + bastidores pesaram"
+}
+"""
+
+EXCLUDED_EXPLAIN_SUFFIX = """
+NOTA: Este jogo está FORA do filtro anti-zero-gols (Over descartado).
+- Parágrafo 1: por que o filtro de gols descartou (critérios que falharam).
+- Parágrafo 2: fundamentar o palpite ALTERNATIVO (vitória ou lay correct score) — não mercados Over.
+- Parágrafo 3: riscos específicos deste palpite alternativo.
+"""
+
 
 def refine_best_pick(analysis: FixtureAnalysis) -> dict | None:
     """LLM final pick — merges numeric baseline with web stats and backstage."""
-    if analysis.excluded or not analysis.best_pick:
-        return analysis.best_pick
+    if not analysis.best_pick:
+        return None
 
     if not settings.has_llm:
         return analysis.best_pick
 
+    system = EXCLUDED_PICK_REFINE_SYSTEM if analysis.excluded else PICK_REFINE_SYSTEM
     payload = {
         "home": analysis.home_name,
         "away": analysis.away_name,
+        "excluded": analysis.excluded,
+        "exclusion_reasons": analysis.exclusion_reasons,
         "goal_potential_score": analysis.goal_potential_score,
         "criteria": [
-            {"name": c.name, "value": c.value, "passed": c.passed, "detail": c.detail}
+            {"name": c.name, "value": c.value, "passed": c.passed, "level": c.level, "detail": c.detail}
             for c in analysis.criteria
         ],
         "home_stats": analysis.home_stats_meta,
@@ -77,7 +131,7 @@ def refine_best_pick(analysis: FixtureAnalysis) -> dict | None:
 
     try:
         user_content = f"Dados para decisão de mercado:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
-        response = chat_completion(PICK_REFINE_SYSTEM, user_content, temperature=0.25, max_tokens=800)
+        response = chat_completion(system, user_content, temperature=0.25, max_tokens=800)
         parsed = _parse_json_from_llm(response)
         if not parsed or not parsed.get("market"):
             return analysis.best_pick
@@ -85,6 +139,7 @@ def refine_best_pick(analysis: FixtureAnalysis) -> dict | None:
             "market": parsed["market"],
             "verdict": parsed.get("verdict") or analysis.best_pick.get("verdict", "CANDIDATE"),
             "reason": parsed.get("reason") or analysis.best_pick.get("reason", ""),
+            "scope": analysis.best_pick.get("scope", "alternate" if analysis.excluded else "goals"),
         }
         if parsed.get("web_factor"):
             refined["web_factor"] = parsed["web_factor"]
@@ -108,6 +163,7 @@ def explain_analysis(analysis: FixtureAnalysis) -> str:
                 "value": c.value,
                 "threshold": c.threshold,
                 "passed": c.passed,
+                "level": c.level,
                 "detail": c.detail,
             }
             for c in analysis.criteria
@@ -123,10 +179,20 @@ def explain_analysis(analysis: FixtureAnalysis) -> str:
     if not settings.has_llm:
         return _fallback_explanation(analysis)
 
+    system = SYSTEM_PROMPT
+    if analysis.excluded and analysis.best_pick:
+        system += EXCLUDED_EXPLAIN_SUFFIX
+
     try:
         user_content = f"Dados do jogo:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
-        text = chat_completion(SYSTEM_PROMPT, user_content)
-        return text if text else _fallback_explanation(analysis)
+        text = chat_completion(
+            system,
+            user_content,
+            max_tokens=settings.llm_explanation_max_tokens,
+        )
+        if text:
+            return _finalize_explanation(text)
+        return _fallback_explanation(analysis)
     except Exception as exc:
         hint = llm_config_hint(exc)
         return f"{_fallback_explanation(analysis)}\n\n(LLM indisponível: {hint})"
@@ -135,11 +201,19 @@ def explain_analysis(analysis: FixtureAnalysis) -> str:
 def _fallback_explanation(analysis: FixtureAnalysis) -> str:
     if analysis.excluded:
         reasons = "; ".join(analysis.exclusion_reasons) or "critérios não atendidos"
-        return (
-            f"Descartado: {analysis.home_name} x {analysis.away_name}. "
-            f"Filtro anti-zero-gols: {reasons}. "
+        base = (
+            f"Fora do filtro de gols: {analysis.home_name} x {analysis.away_name}. "
+            f"Motivos: {reasons}. "
             f"Score de potencial: {analysis.goal_potential_score}/100."
         )
+        pick = analysis.best_pick
+        if pick:
+            return (
+                f"{base} "
+                f"Palpite alternativo: {pick.get('market', '—')} ({pick.get('verdict', '—')}). "
+                f"{pick.get('reason', '')}"
+            )
+        return base
 
     pick = analysis.best_pick
     if pick:

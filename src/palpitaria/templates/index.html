@@ -125,25 +125,9 @@
         </div>
         {% endif %}
 
-        {% if a.best_pick %}
-        <div class="best-recommendation" style="margin-top: 1.5rem; padding: 1.5rem; background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-radius: 20px; border: 1px solid #bfdbfe;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <strong style="font-size: 1.1rem; color: var(--blue); text-transform: uppercase; letter-spacing: 0.05em;">🎯 Recomendação Principal</strong>
-            <div class="badge {% if a.best_pick.verdict == 'STRONG' %}ok{% else %}warn{% endif %}">{{ a.best_pick.verdict }}</div>
-          </div>
-          <div style="font-size: 1.4rem; font-weight: 800; color: var(--text); margin-bottom: 0.5rem;">
-            {{ a.best_pick.market }}
-          </div>
-          <p style="font-size: 0.95rem; color: #1e40af; margin: 0; line-height: 1.6;">
-            {{ a.best_pick.reason }}
-          </p>
-          {% if a.best_pick.web_factor %}
-          <p style="font-size: 0.85rem; color: #64748b; margin: 0.75rem 0 0; font-style: italic;">
-            🌐 {{ a.best_pick.web_factor }}
-          </p>
-          {% endif %}
-        </div>
-        {% endif %}
+        {% with title="🎯 Recomendação Principal", bg="linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)", border="#bfdbfe", title_color="var(--blue)", text_color="#1e40af", subtitle="" %}
+          {% include "partials/recommendation.html" %}
+        {% endwith %}
       </div>
     </div>
     {% endfor %}
@@ -166,6 +150,9 @@
 
 <section>
   <h2>🚫 Fugir do Zero — hoje ({{ discarded|length }})</h2>
+  <p class="sub" style="margin: -0.5rem 0 1rem; font-size: 0.85rem; color: var(--muted);">
+    Mercados Over descartados pelo filtro anti-0–0 — cada jogo ainda pode ter palpite alternativo (vitória ou lay correct score).
+  </p>
   {% for a in discarded %}
   <div class="card collapsed" style="opacity: 0.8;">
     <div class="card-header" onclick="toggleCard(this)">
@@ -229,6 +216,10 @@
         </div>
       </div>
       {% endif %}
+
+      {% with title="🎲 Palpite Alternativo", bg="linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)", border="#fcd34d", title_color="#92400e", text_color="#78350f", subtitle="Fora do filtro de gols (Over) — leitura em 1X2 ou Lay Correct Score." %}
+        {% include "partials/recommendation.html" %}
+      {% endwith %}
 
       {% if a.criteria %}
       <details open>

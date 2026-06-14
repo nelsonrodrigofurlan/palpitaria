@@ -41,6 +41,7 @@ def team_results_queries(team_name: str, *, external_id: int | None = None) -> l
         f"{en} {s['fbref']} national team stats goals",
         f"{team_name} seleção últimos jogos placares amistosos eliminatórias",
         f"{en} World Cup qualifying Nations League friendly results score",
+        f"{en} national team last 10 matches results score 2024 2025 2026",
     ]
 
 

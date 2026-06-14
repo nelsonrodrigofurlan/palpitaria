@@ -1,6 +1,6 @@
 <table>
   <thead>
-    <tr><th>Critério</th><th>Valor</th><th>Limiar</th><th></th></tr>
+    <tr><th>Critério</th><th>Valor</th><th>Limiar</th><th>Status</th></tr>
   </thead>
   <tbody>
     {% for c in a.criteria %}
@@ -11,8 +11,16 @@
       </td>
       <td>{{ c.value }}</td>
       <td>{{ c.threshold }}</td>
-      <td class="{% if c.passed %}pass{% else %}fail{% endif %}">{% if c.passed %}OK{% else %}FALHOU{% endif %}</td>
+      <td class="crit-{{ c.level if c.level else ('pass' if c.passed else 'fail') }}">
+        {% if c.level == 'strong' %}ÓTIMO{% elif c.passed %}OK{% else %}FALHOU{% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+{% set strong_n = a.strong_criteria_count %}
+{% if strong_n > 0 %}
+<p style="font-size: 0.85rem; color: #b45309; margin: 0.75rem 0 0; font-weight: 600;">
+  ★ {{ strong_n }} critério(s) ÓTIMO(s) — cenário acima da média para explorar outros mercados.
+</p>
+{% endif %}
