@@ -154,5 +154,6 @@ Sincronizar com `context.md`:
 
 - Contexto vivo: [context.md](context.md)
 - Estratégias por competição: [competition-data-strategies.md](competition-data-strategies.md)
+- Stalking seleções Copa (fontes FIFA, ESPN, Transfermarkt, FBref…): [copa-mundo-stalking.md](copa-mundo-stalking.md)
 - API-Football docs: https://www.api-football.com/documentation-v3
 - football-data.org: https://www.football-data.org/documentation/api

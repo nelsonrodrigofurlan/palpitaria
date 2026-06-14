@@ -42,6 +42,8 @@ Passo 3 /analyze (sempre):
 | DuckDuckGo + LLM | Placares recentes (web_research / **hybrid** — sempre) |
 | LLM | Bastidores, clima, **decisão de mercado**, explicação |
 
+**Mapa completo de fontes para stalking (FIFA, ESPN, Transfermarkt, FBref, etc.):** [copa-mundo-stalking.md](copa-mundo-stalking.md)
+
 ### Config (`config.py`)
 
 - `wc_web_profile_min_matches` — mínimo de jogos com placar explícito na web (default: 3)

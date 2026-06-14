@@ -65,20 +65,62 @@ def search_web_fallbacks(queries: list[str], max_results: int = 6) -> str:
     return ""
 
 
+def search_web_stalking(
+    queries: list[str],
+    *,
+    max_results_per_query: int = 4,
+    min_total_len: int = 120,
+) -> str:
+    """Merge snippets from multiple stalking queries (core-6 sources)."""
+    blocks: list[str] = []
+    seen_hrefs: set[str] = set()
+    for query in queries:
+        snippets = search_web(query, max_results=max_results_per_query)
+        if not snippets or snippets.startswith("(Busca indisponível"):
+            continue
+        for block in snippets.split("\n- "):
+            block = block.strip()
+            if not block:
+                continue
+            href = ""
+            for line in block.split("\n"):
+                if line.strip().startswith("http"):
+                    href = line.strip()
+                    break
+            key = href or block[:80]
+            if key in seen_hrefs:
+                continue
+            seen_hrefs.add(key)
+            blocks.append(f"- {block}" if not block.startswith("-") else block)
+        if sum(len(b) for b in blocks) > 8000:
+            break
+    merged = "\n".join(blocks)
+    return merged if len(merged) >= min_total_len else merged
+
+
 def get_search_queries(team_name: str, *, external_id: int | None = None) -> list[str]:
-    en = english_team_name(team_name, external_id)
-    return [
-        f"{en} national team World Cup 2026 injuries lineup squad news",
-        f"{team_name} seleção Copa do Mundo 2026 lesões escalação bastidores",
-    ]
+    from palpitaria.services.wc_stalking_queries import team_bastidores_queries, team_strength_queries
+
+    return team_bastidores_queries(team_name, external_id=external_id) + team_strength_queries(
+        team_name, external_id=external_id
+    )
 
 
-def get_match_context_queries(home_name: str, away_name: str) -> list[str]:
-    return [
-        f"{home_name} vs {away_name} World Cup 2026 referee weather stadium pitch forecast",
-        f"{home_name} {away_name} FIFA World Cup 2026 match officials MetLife",
-        f"{home_name} x {away_name} Copa 2026 árbitro clima gramado estádio",
-    ]
+def get_match_context_queries(
+    home_name: str,
+    away_name: str,
+    *,
+    home_external_id: int | None = None,
+    away_external_id: int | None = None,
+) -> list[str]:
+    from palpitaria.services.wc_stalking_queries import match_context_queries
+
+    return match_context_queries(
+        home_name,
+        away_name,
+        home_external_id=home_external_id,
+        away_external_id=away_external_id,
+    )
 
 
 def analyze_team_moment(team_name: str, raw_content: str, *, squad: list[str] | None = None) -> dict:
@@ -200,10 +242,25 @@ def _normalize_match_context(raw: dict) -> dict:
     }
 
 
-def collect_match_context(home_name: str, away_name: str, *, external_id: int | None = None) -> dict:
+def collect_match_context(
+    home_name: str,
+    away_name: str,
+    *,
+    external_id: int | None = None,
+    home_external_id: int | None = None,
+    away_external_id: int | None = None,
+) -> dict:
     ctx = fetch_api_match_context(external_id) if external_id else {}
 
-    snippets = search_web_fallbacks(get_match_context_queries(home_name, away_name), max_results=8)
+    snippets = search_web_stalking(
+        get_match_context_queries(
+            home_name,
+            away_name,
+            home_external_id=home_external_id,
+            away_external_id=away_external_id,
+        ),
+        max_results_per_query=4,
+    )
     if snippets:
         web_ctx = _normalize_match_context(analyze_match_context(home_name, away_name, snippets))
         for key in ("weather", "referee", "pitch", "impact"):
@@ -219,8 +276,9 @@ def collect_match_context(home_name: str, away_name: str, *, external_id: int | 
 
 
 def collect_team_insights(team_name: str, *, team_external_id: int | None = None) -> dict | None:
-    snippets = search_web_fallbacks(
-        get_search_queries(team_name, external_id=team_external_id), max_results=6
+    snippets = search_web_stalking(
+        get_search_queries(team_name, external_id=team_external_id),
+        max_results_per_query=4,
     )
     if not snippets:
         return None
@@ -285,6 +343,13 @@ def enrich_fixture_analysis(
         if log_callback:
             log_callback(msg)
 
+    from palpitaria.models import Team
+
+    home_team = db.query(Team).filter_by(id=home_team_id).one_or_none()
+    away_team = db.query(Team).filter_by(id=away_team_id).one_or_none()
+    home_ext = home_team.external_id if home_team else None
+    away_ext = away_team.external_id if away_team else None
+
     if excluded:
         log("  [2/3] Coletando bastidores + contexto (mesmo descartado — informa a decisão)...")
     else:
@@ -300,6 +365,12 @@ def enrich_fixture_analysis(
 
     match_context = None
     log(f"  [2c] Contexto de jogo — clima, árbitro, gramado...")
-    match_context = collect_match_context(home_name, away_name, external_id=external_id)
+    match_context = collect_match_context(
+        home_name,
+        away_name,
+        external_id=external_id,
+        home_external_id=home_ext,
+        away_external_id=away_ext,
+    )
 
     return home, away, match_context

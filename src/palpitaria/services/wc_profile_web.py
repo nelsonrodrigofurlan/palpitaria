@@ -19,8 +19,9 @@ from palpitaria.services.ingest import (
     save_team_profile,
 )
 from palpitaria.services.llm_client import chat_completion
-from palpitaria.services.scraper import _parse_json_from_llm, search_web_fallbacks
+from palpitaria.services.scraper import _parse_json_from_llm, search_web_stalking
 from palpitaria.services.team_names import english_team_name, names_for_matching
+from palpitaria.services.wc_stalking_queries import team_results_queries
 
 TEAM_RESULTS_SYSTEM = """Você extrai resultados REAIS de jogos de seleções a partir de snippets da web.
 
@@ -50,12 +51,7 @@ Retorne SOMENTE JSON válido:
 
 
 def get_team_results_queries(team_name: str, external_id: int | None = None) -> list[str]:
-    en = english_team_name(team_name, external_id)
-    return [
-        f"{en} national team last 12 matches results score 2024 2025 2026",
-        f"{team_name} seleção últimos jogos placares amistosos eliminatórias Copa 2026",
-        f"{en} World Cup qualifying Nations League friendly results goals conceded",
-    ]
+    return team_results_queries(team_name, external_id=external_id)
 
 
 def _normalize_name(name: str) -> str:
@@ -257,8 +253,9 @@ def build_web_team_profile(
             log_callback(msg)
 
     log(f"  Web: buscando histórico — {team.name}...")
-    snippets = search_web_fallbacks(
-        get_team_results_queries(team.name, team.external_id), max_results=8
+    snippets = search_web_stalking(
+        get_team_results_queries(team.name, team.external_id),
+        max_results_per_query=4,
     )
     if not snippets or len(snippets) < 80:
         log(f"  Web: poucas fontes para {team.name}")

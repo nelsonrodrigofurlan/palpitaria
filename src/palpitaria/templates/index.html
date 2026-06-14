@@ -47,7 +47,7 @@
             {% if a.away_crest %}<img src="{{ a.away_crest }}" alt="" class="team-crest">{% endif %}
           </div>
           <div class="meta" style="margin: 0;">
-            📅 {{ a.utc_date | kickoff(app_timezone) }} ({{ app_timezone }})
+            ⏰ {{ a.utc_date | kickoff(app_timezone) }} ({{ app_timezone }})
             {% if a.venue_label %} · 📍 {{ a.venue_label }}{% endif %}
             {% if a.group_name %} · 🏆 {{ a.group_name }}{% endif %}
             · 📊 Score: <strong>{{ a.goal_potential_score }}/100</strong>
@@ -176,7 +176,7 @@
           {% if a.away_crest %}<img src="{{ a.away_crest }}" alt="" class="team-crest">{% endif %}
         </div>
         <div class="meta" style="margin: 0;">
-          📅 {{ a.utc_date | kickoff(app_timezone) }} ({{ app_timezone }})
+          ⏰ {{ a.utc_date | kickoff(app_timezone) }} ({{ app_timezone }})
           {% if a.venue_label %} · 📍 {{ a.venue_label }}{% endif %}
         </div>
       </div>
