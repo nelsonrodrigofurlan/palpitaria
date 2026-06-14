@@ -12,7 +12,7 @@
 {% elif profiles_ready < profiles_total %}
 <div class="alert">
   ⚠️ <strong>Perfis incompletos:</strong> {{ profiles_ready }}/{{ profiles_total }} seleções prontas.
-  Rode o passo <strong>2. Atualizar Perfis</strong> até completar (~5 min). Sem isso, todos os jogos serão descartados.
+  Rode o passo <strong>2. Atualizar Perfis</strong> no dia do jogo (só as seleções de hoje). Estreias → passo 3.
 </div>
 {% endif %}
 
@@ -21,14 +21,14 @@
     <button type="submit" data-loading="sync">1. Sincronizar Jogos</button>
   </form>
   <form hx-post="/sync-profiles" hx-target="#sync-result" hx-swap="innerHTML">
-    <button type="submit" class="secondary" data-loading="profiles">2. Atualizar Perfis (~5 min)</button>
+    <button type="submit" class="secondary" data-loading="profiles">2. Atualizar Perfis (seleções de hoje)</button>
   </form>
   <form hx-post="/analyze" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="600000">
     <button type="submit" class="yellow" data-loading="analyze">3. Gerar Leituras de Hoje</button>
   </form>
   <p class="sub" style="margin: 0.5rem 0 0; font-size: 0.85rem; color: var(--muted);">
-    Passo 3 coleta bastidores + clima/árbitro/gramado na web e só então gera a recomendação.
-    Requer <code>OPENAI_API_KEY</code> (OpenRouter). ~2–3 min por jogo.
+    Passo 3 coleta histórico web das seleções de hoje (amistosos/eliminatórias), bastidores, clima/árbitro e recomendação.
+    Requer <code>OPENAI_API_KEY</code> (OpenRouter). ~3–5 min no total.
   </p>
 </div>
 
@@ -42,9 +42,9 @@
       <div class="card-header" onclick="toggleCard(this)">
         <div style="display: flex; flex-direction: column; gap: 0.25rem;">
           <div class="match-title" style="display: flex; align-items: center; gap: 0.75rem;">
-            {% if a.home_crest %}<img src="{{ a.home_crest }}" alt="" style="height: 24px; width: auto;">{% endif %}
+            {% if a.home_crest %}<img src="{{ a.home_crest }}" alt="" class="team-crest">{% endif %}
             {{ a.home_name }} x {{ a.away_name }}
-            {% if a.away_crest %}<img src="{{ a.away_crest }}" alt="" style="height: 24px; width: auto;">{% endif %}
+            {% if a.away_crest %}<img src="{{ a.away_crest }}" alt="" class="team-crest">{% endif %}
           </div>
           <div class="meta" style="margin: 0;">
             📅 {{ a.utc_date | kickoff(app_timezone) }} ({{ app_timezone }})
@@ -137,6 +137,11 @@
           <p style="font-size: 0.95rem; color: #1e40af; margin: 0; line-height: 1.6;">
             {{ a.best_pick.reason }}
           </p>
+          {% if a.best_pick.web_factor %}
+          <p style="font-size: 0.85rem; color: #64748b; margin: 0.75rem 0 0; font-style: italic;">
+            🌐 {{ a.best_pick.web_factor }}
+          </p>
+          {% endif %}
         </div>
         {% endif %}
       </div>
@@ -166,9 +171,9 @@
     <div class="card-header" onclick="toggleCard(this)">
       <div style="display: flex; flex-direction: column; gap: 0.25rem;">
         <div class="match-title" style="color: var(--muted); display: flex; align-items: center; gap: 0.75rem;">
-          {% if a.home_crest %}<img src="{{ a.home_crest }}" alt="" style="height: 24px; width: auto;">{% endif %}
+          {% if a.home_crest %}<img src="{{ a.home_crest }}" alt="" class="team-crest">{% endif %}
           {{ a.home_name }} x {{ a.away_name }}
-          {% if a.away_crest %}<img src="{{ a.away_crest }}" alt="" style="height: 24px; width: auto;">{% endif %}
+          {% if a.away_crest %}<img src="{{ a.away_crest }}" alt="" class="team-crest">{% endif %}
         </div>
         <div class="meta" style="margin: 0;">
           📅 {{ a.utc_date | kickoff(app_timezone) }} ({{ app_timezone }})

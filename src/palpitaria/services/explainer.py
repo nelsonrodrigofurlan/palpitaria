@@ -5,25 +5,92 @@ import json
 from palpitaria.config import settings
 from palpitaria.services.analyzer import FixtureAnalysis
 from palpitaria.services.llm_client import chat_completion, llm_config_hint
-
+from palpitaria.services.scraper import _parse_json_from_llm
 
 SYSTEM_PROMPT = """Você é o analista sênior da Palpitaria FC. Sua missão é fornecer uma leitura técnica, precisa e sem "oba-oba" sobre o potencial de gols de uma partida.
 
 Regras de Ouro:
 1. SOBRIEDADE: Não seja "emocionado". Se os dados indicam um jogo aberto, explique o PORQUÊ (ex: defesas vazadas, ataques eficientes). Se houver riscos, aponte-os.
 2. FOCO NO DIA: Considere as informações de bastidores (lesões, clima, motivação) e as condições de jogo (Árbitro, Clima, Gramado) como fatores determinantes para validar ou questionar as estatísticas.
-3. RECOMENDAÇÃO ÚNICA: Identifique a melhor entrada (ex: Over 0.5, Vitória, etc.) como a principal e fundamente-a com base em todos os dados.
-4. ARBITRAGEM E CLIMA: Analise se o árbitro é do tipo que "deixa o jogo rolar" ou se é rigoroso (o que pode travar o jogo ou gerar expulsões). Veja se o clima (chuva, calor extremo) favorece ou atrapalha o fluxo de gols.
-5. ESTRUTURA:
-   - Parágrafo 1: O cenário técnico e o momento das equipes (bastidores).
-   - Parágrafo 2: A recomendação principal fundamentada (estatística + condições de jogo).
+3. HISTÓRICO WEB + API: O perfil híbrido (amistosos, eliminatórias, Nations League + jogos de Copa na API) pesa tanto quanto os números do dia — cite quando a web reforça ou contradiz a estatística.
+4. RECOMENDAÇÃO ÚNICA: Fundamente a entrada principal (best_pick) com estatística + bastidores + contexto + histórico web.
+5. ARBITRAGEM E CLIMA: Analise se o árbitro é do tipo que "deixa o jogo rolar" ou se é rigoroso (o que pode travar o jogo ou gerar expulsões). Veja se o clima (chuva, calor extremo) favorece ou atrapalha o fluxo de gols.
+6. ESTRUTURA:
+   - Parágrafo 1: O cenário técnico e o momento das equipes (bastidores + histórico recente).
+   - Parágrafo 2: A recomendação principal fundamentada (estatística híbrida + condições de jogo).
    - Parágrafo 3: Alertas de risco específicos (ex: "O árbitro rigoroso pode gerar muitas interrupções, dificultando o Over 1.5").
 
 Tom de voz: Profissional, analítico, direto ao ponto. Use termos como 'valor', 'exposição', 'leitura de fluxo', 'equilíbrio'.
 Máximo 3 parágrafos. Não invente dados.
-6. ELENCO: Só cite jogadores presentes em home_insights/away_insights. "Não convocado" ≠ "lesionado/fora". Se não estiver nos dados, não mencione.
+7. ELENCO: Só cite jogadores presentes em home_insights/away_insights. "Não convocado" ≠ "lesionado/fora". Se não estiver nos dados, não mencione.
 """
 
+PICK_REFINE_SYSTEM = """Você decide a recomendação de mercado da Palpitaria FC para UM jogo.
+
+Entradas disponíveis:
+- numeric_suggestion: leitura inicial baseada só em thresholds (pode ser ajustada)
+- home_stats / away_stats: perfil híbrido (API Copa + histórico web — amistosos, eliminatórias)
+- home_insights / away_insights: bastidores do dia (lesões, clima interno, motivação)
+- match_context: clima, árbitro, gramado
+- criteria: filtros anti-zero-gols
+
+Regras:
+- A decisão DEVE integrar bastidores e histórico web — não ignore web_factor.
+- Mercados: OVER 0.5 GOALS, OVER 1.5 GOALS, OVER 2.5 GOALS, VITÓRIA: [nome do time]
+- Se dados web contradizem stats ou há risco alto de 0-0, pode manter mercado conservador ou questionar Over 1.5.
+- Não invente jogadores, placares ou clima.
+- Só cite jogadores em home_insights/away_insights.
+
+Retorne SOMENTE JSON válido:
+{
+  "market": "OVER 1.5 GOALS",
+  "verdict": "STRONG|CANDIDATE",
+  "reason": "2-3 frases objetivas",
+  "web_factor": "1 frase: como histórico web + bastidores pesaram"
+}
+"""
+
+
+def refine_best_pick(analysis: FixtureAnalysis) -> dict | None:
+    """LLM final pick — merges numeric baseline with web stats and backstage."""
+    if analysis.excluded or not analysis.best_pick:
+        return analysis.best_pick
+
+    if not settings.has_llm:
+        return analysis.best_pick
+
+    payload = {
+        "home": analysis.home_name,
+        "away": analysis.away_name,
+        "goal_potential_score": analysis.goal_potential_score,
+        "criteria": [
+            {"name": c.name, "value": c.value, "passed": c.passed, "detail": c.detail}
+            for c in analysis.criteria
+        ],
+        "home_stats": analysis.home_stats_meta,
+        "away_stats": analysis.away_stats_meta,
+        "home_insights": analysis.home_insights,
+        "away_insights": analysis.away_insights,
+        "match_context": analysis.match_context,
+        "numeric_suggestion": analysis.best_pick,
+    }
+
+    try:
+        user_content = f"Dados para decisão de mercado:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
+        response = chat_completion(PICK_REFINE_SYSTEM, user_content, temperature=0.25, max_tokens=800)
+        parsed = _parse_json_from_llm(response)
+        if not parsed or not parsed.get("market"):
+            return analysis.best_pick
+        refined = {
+            "market": parsed["market"],
+            "verdict": parsed.get("verdict") or analysis.best_pick.get("verdict", "CANDIDATE"),
+            "reason": parsed.get("reason") or analysis.best_pick.get("reason", ""),
+        }
+        if parsed.get("web_factor"):
+            refined["web_factor"] = parsed["web_factor"]
+        return refined
+    except Exception:
+        return analysis.best_pick
 
 
 def explain_analysis(analysis: FixtureAnalysis) -> str:
@@ -47,6 +114,8 @@ def explain_analysis(analysis: FixtureAnalysis) -> str:
         ],
         "home_insights": analysis.home_insights,
         "away_insights": analysis.away_insights,
+        "home_stats": analysis.home_stats_meta,
+        "away_stats": analysis.away_stats_meta,
         "best_pick": analysis.best_pick,
         "match_context": analysis.match_context,
     }

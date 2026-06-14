@@ -80,6 +80,7 @@
               <th>Jogo</th>
               <th>Odd</th>
               <th>Stake</th>
+              <th>Status</th>
               <th>P&L</th>
               <th></th>
             </tr>
@@ -90,8 +91,32 @@
               <td>{{ bet.description }}</td>
               <td>{{ bet.odds }}</td>
               <td>{{ bet.stake }}</td>
+              <td>
+                {% if bet.outcome == 'PENDING' %}
+                <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+                  <form action="/branches/bet/update/{{ bet.id }}" method="POST" style="margin: 0;">
+                    <input type="hidden" name="outcome" value="WIN">
+                    <button type="submit" title="Marcar GREEN" style="background: #dcfce7; color: #166534; padding: 0.2rem 0.5rem; font-size: 0.7rem; border: 1px solid #bbf7d0; border-radius: 6px; box-shadow: none;">✅ Green</button>
+                  </form>
+                  <form action="/branches/bet/update/{{ bet.id }}" method="POST" style="margin: 0;">
+                    <input type="hidden" name="outcome" value="LOSS">
+                    <button type="submit" title="Marcar RED" style="background: #fee2e2; color: #991b1b; padding: 0.2rem 0.5rem; font-size: 0.7rem; border: 1px solid #fecaca; border-radius: 6px; box-shadow: none;">❌ Red</button>
+                  </form>
+                </div>
+                {% elif bet.outcome == 'WIN' %}
+                <span class="badge ok" style="font-size: 0.65rem;">GREEN</span>
+                {% elif bet.outcome == 'LOSS' %}
+                <span class="badge err" style="font-size: 0.65rem;">RED</span>
+                {% else %}
+                {{ bet.outcome }}
+                {% endif %}
+              </td>
               <td class="{% if bet.outcome == 'WIN' %}pass{% elif bet.outcome == 'LOSS' %}fail{% endif %}">
+                {% if bet.outcome == 'PENDING' %}
+                <span style="color: var(--muted);">—</span>
+                {% else %}
                 {{ "%.2f"|format(bet.profit_loss) }}
+                {% endif %}
               </td>
               <td>
                 <form action="/branches/bet/delete/{{ bet.id }}" method="POST" onsubmit="return confirm('Excluir esta entrada?')">

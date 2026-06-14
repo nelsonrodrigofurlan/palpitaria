@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 from palpitaria.config import settings
 from palpitaria.models import Fixture
 from palpitaria.services.ingest import latest_profile
+from palpitaria.services.team_names import localize_team_name
 
 
 @dataclass
@@ -42,6 +43,8 @@ class FixtureAnalysis:
     home_insights: dict | None = None
     away_insights: dict | None = None
     match_context: dict | None = None  # Clima, Árbitro, Gramado
+    home_stats_meta: dict | None = None  # Perfil híbrido (API + web) — mandante
+    away_stats_meta: dict | None = None  # Perfil híbrido (API + web) — visitante
     venue_stadium: str | None = None
     venue_city: str | None = None
     venue_state: str | None = None
@@ -110,8 +113,8 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
     analysis = FixtureAnalysis(
         fixture_id=fixture.id,
         external_id=fixture.external_id,
-        home_name=home.name,
-        away_name=away.name,
+        home_name=localize_team_name(home.name, home.external_id),
+        away_name=localize_team_name(away.name, away.external_id),
         home_crest=home.crest_url,
         away_crest=away.crest_url,
         utc_date=fixture.utc_date,
@@ -127,7 +130,9 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
 
     if home_profile is None or away_profile is None:
         analysis.excluded = True
-        analysis.exclusion_reasons.append("Perfil estatístico incompleto — ingestão necessária")
+        analysis.exclusion_reasons.append(
+            "Perfil estatístico incompleto — rode passo 3 (Gerar Leituras) para coletar histórico via web"
+        )
         return analysis
 
     if home_profile.matches_sampled < 1 or away_profile.matches_sampled < 1:
@@ -181,14 +186,14 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
             value=round(home_profile.avg_goals_scored, 3),
             threshold=">= 0.8",
             passed=home_profile.avg_goals_scored >= 0.8,
-            detail=f"{home.name} — gols marcados/jogo",
+            detail=f"{localize_team_name(home.name, home.external_id)} — gols marcados/jogo",
         ),
         CriterionResult(
             name="away_offense",
             value=round(away_profile.avg_goals_scored, 3),
             threshold=">= 0.8",
             passed=away_profile.avg_goals_scored >= 0.8,
-            detail=f"{away.name} — gols marcados/jogo",
+            detail=f"{localize_team_name(away.name, away.external_id)} — gols marcados/jogo",
         ),
     ]
     analysis.criteria = criteria
@@ -204,6 +209,9 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
     if not analysis.excluded:
         analysis.best_pick = _select_best_pick(analysis, home_profile, away_profile, combined_avg, min_over_05)
 
+    analysis.home_stats_meta = _profile_stats_meta(home_profile)
+    analysis.away_stats_meta = _profile_stats_meta(away_profile)
+
     # Attach insights if available
     if home_profile.insights_json:
         analysis.home_insights = json.loads(home_profile.insights_json)
@@ -211,6 +219,28 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
         analysis.away_insights = json.loads(away_profile.insights_json)
 
     return analysis
+
+
+def _profile_stats_meta(profile) -> dict:
+    """Snapshot of numeric profile + web/API provenance for LLM decisions."""
+    meta = {
+        "matches_sampled": profile.matches_sampled,
+        "avg_goals_scored": profile.avg_goals_scored,
+        "avg_goals_conceded": profile.avg_goals_conceded,
+        "zero_zero_rate": profile.zero_zero_rate,
+        "over_05_rate": profile.over_05_rate,
+        "over_15_rate": profile.over_15_rate,
+        "over_25_rate": profile.over_25_rate,
+        "win_rate": profile.win_rate,
+        "both_teams_score_rate": profile.both_teams_score_rate,
+    }
+    if profile.raw_json:
+        try:
+            raw = json.loads(profile.raw_json)
+            meta.update({k: v for k, v in raw.items() if k not in meta or k in ("source", "api_matches", "web_matches", "confidence", "sources_summary")})
+        except json.JSONDecodeError:
+            pass
+    return meta
 
 
 def default_match_context() -> dict:

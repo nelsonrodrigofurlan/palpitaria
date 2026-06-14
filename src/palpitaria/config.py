@@ -160,6 +160,10 @@ class Settings(BaseSettings):
     min_both_score_rate: float = 0.55
     min_over_05_historical_rate: float = 0.88
 
+    # Copa — perfis híbridos API+web sempre; refresh configurável
+    wc_web_profile_min_matches: int = 3
+    wc_web_profile_refresh_hours: int = 0  # 0 = refresh every analyze run
+
     @property
     def data_dir(self) -> Path:
         path = Path("data")

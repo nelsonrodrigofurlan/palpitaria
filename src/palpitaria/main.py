@@ -23,10 +23,11 @@ from palpitaria.services.analyzer import (
     get_today_context,
     persist_analysis,
 )
-from palpitaria.services.explainer import explain_analysis
+from palpitaria.services.explainer import explain_analysis, refine_best_pick
 from palpitaria.services.football_data_client import FootballDataClient, FootballDataError
-from palpitaria.services.ingest import build_team_profiles, ingest_world_cup
+from palpitaria.services.ingest import build_team_profiles, ingest_world_cup, localize_existing_teams
 from palpitaria.services.scraper import enrich_fixture_analysis
+from palpitaria.services.wc_profile_web import enrich_today_team_profiles
 from palpitaria.models import Fixture
 
 # Global log buffer for "Nerd Vision"
@@ -37,6 +38,14 @@ def add_log(msg: str):
     timestamp = datetime.now().strftime("%H:%M:%S")
     LOG_BUFFER.append(f"[{timestamp}] {msg}")
 
+
+def compute_bet_pl(stake: float, odds: float, outcome: str, commission_rate: float) -> float:
+    commission = commission_rate / 100.0
+    if outcome == "WIN":
+        return stake * (odds - 1) * (1 - commission)
+    if outcome == "LOSS":
+        return -stake
+    return 0.0
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -60,6 +69,7 @@ def on_startup() -> None:
 
 
 def _render_home(request: Request, db: Session) -> HTMLResponse:
+    localize_existing_teams(db)
     today = get_today_context()
     analyses = analyze_upcoming(db, limit=50, for_today_only=True)
     attach_saved_reports(db, analyses)
@@ -103,6 +113,9 @@ def sync_data(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         LOG_BUFFER.clear()
         client = FootballDataClient()
         ingest_result = ingest_world_cup(db, client, log_callback=add_log)
+        renamed = localize_existing_teams(db)
+        if renamed:
+            add_log(f"Nomes padronizados PT-BR: {renamed} seleções")
     except FootballDataError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
@@ -115,7 +128,7 @@ def sync_data(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         {
             "ingest": ingest_result,
             "profiles": None,
-            "message": "Jogos sincronizados. Agora clique em Atualizar Perfis (~5 min).",
+            "message": "Jogos sincronizados. No dia do jogo, clique em Atualizar Perfis (só seleções de hoje).",
             "redirect": True,
         },
     )
@@ -129,8 +142,15 @@ def sync_profiles(request: Request, db: Session = Depends(get_db)) -> HTMLRespon
     try:
         LOG_BUFFER.clear()
         client = FootballDataClient()
-        profiles = build_team_profiles(db, client, log_callback=add_log)
+        profiles = build_team_profiles(
+            db,
+            client,
+            log_callback=add_log,
+            competition_code=settings.world_cup_code,
+            today_only=True,
+        )
         ready, total = count_teams_with_profiles(db)
+        today_ctx = get_today_context()
     except FootballDataError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
@@ -143,7 +163,11 @@ def sync_profiles(request: Request, db: Session = Depends(get_db)) -> HTMLRespon
         {
             "ingest": None,
             "profiles": profiles,
-            "message": f"Perfis processados: {profiles} chamadas API. Seleções prontas: {ready}/{total}.",
+            "message": (
+                f"Perfis API: {profiles} seleção(ões) de hoje ({today_ctx.label}). "
+                f"Total prontas no banco: {ready}/{total}. "
+                f"Estreias sem jogo na API → passo 3 (perfil web)."
+            ),
             "redirect": True,
         },
     )
@@ -175,10 +199,18 @@ def run_analysis(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=detail)
 
     LOG_BUFFER.clear()
-    add_log(f"Iniciando pipeline de {len(analyses)} jogos (API → scrap → recomendação)...")
+    add_log(f"Iniciando pipeline de {len(analyses)} jogos (web perfis → API → scrap → recomendação)...")
+
+    add_log("[0/3] Perfis híbridos — API Copa + histórico web das seleções de hoje...")
+    web_profiles = enrich_today_team_profiles(db, log_callback=add_log, force_refresh=True)
+    add_log(f"  -> {web_profiles} perfil(is) enriquecido(s) via web")
+
+    analyses = analyze_upcoming(db, limit=50, for_today_only=True)
+    add_log(f"Reavaliando {len(analyses)} jogos após perfis web...")
+
     for analysis in analyses:
         fixture = db.query(Fixture).filter_by(id=analysis.fixture_id).one()
-        add_log(f"[1/3] Números API — {analysis.home_name} x {analysis.away_name} (score {analysis.goal_potential_score})")
+        add_log(f"[1/3] Números — {analysis.home_name} x {analysis.away_name} (score {analysis.goal_potential_score})")
 
         add_log("  [2/3] Scraping bastidores + contexto de jogo...")
         home_insights, away_insights, match_context = enrich_fixture_analysis(
@@ -198,7 +230,8 @@ def run_analysis(request: Request, db: Session = Depends(get_db)):
         analysis.away_insights = away_insights
         analysis.match_context = match_context or default_match_context()
 
-        add_log("  [3/3] Recomendação final (LLM)...")
+        add_log("  [3/3] Decisão de mercado (LLM + web + bastidores)...")
+        analysis.best_pick = refine_best_pick(analysis)
         explanation = explain_analysis(analysis)
         analysis.llm_explanation = explanation
         persist_analysis(db, analysis, explanation)
@@ -277,14 +310,8 @@ async def add_bet(request: Request, db: Session = Depends(get_db)):
     outcome = form.get("outcome") # WIN, LOSS, PENDING
     
     branch = db.query(Branch).filter_by(id=branch_id).first()
-    commission = (branch.commission_rate / 100.0) if branch else 0.065
-    
-    pl = 0.0
-    if outcome == "WIN":
-        gross_profit = stake * (odds - 1)
-        pl = gross_profit * (1 - commission)
-    elif outcome == "LOSS":
-        pl = -stake
+    commission_rate = branch.commission_rate if branch else 6.5
+    pl = compute_bet_pl(stake, odds, outcome or "PENDING", commission_rate)
 
     bet = Bet(
         branch_id=branch_id,
@@ -319,6 +346,28 @@ async def add_branch(request: Request, db: Session = Depends(get_db)):
     
     branch = Branch(name=name, slug=slug, description=description, commission_rate=commission_rate)
     db.add(branch)
+    db.commit()
+    return RedirectResponse(url="/branches", status_code=303)
+
+
+@app.post("/branches/bet/update/{bet_id}")
+async def update_bet_outcome(bet_id: int, request: Request, db: Session = Depends(get_db)):
+    from palpitaria.models import Bet, Branch
+
+    form = await request.form()
+    outcome = form.get("outcome")
+    if outcome not in ("WIN", "LOSS", "PENDING"):
+        raise HTTPException(status_code=400, detail="Status inválido")
+
+    bet = db.query(Bet).filter(Bet.id == bet_id).one_or_none()
+    if bet is None:
+        raise HTTPException(status_code=404, detail="Entrada não encontrada")
+
+    branch = db.query(Branch).filter_by(id=bet.branch_id).first()
+    commission_rate = branch.commission_rate if branch else 6.5
+
+    bet.outcome = outcome
+    bet.profit_loss = compute_bet_pl(bet.stake, bet.odds, outcome, commission_rate)
     db.commit()
     return RedirectResponse(url="/branches", status_code=303)
 

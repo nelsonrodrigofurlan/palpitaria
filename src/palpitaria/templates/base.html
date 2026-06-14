@@ -177,6 +177,15 @@
     }
     .card:hover { border-color: var(--blue); }
     .match-title { font-weight: 800; font-size: 1.2rem; color: var(--blue); }
+    .team-crest {
+      height: 24px;
+      width: auto;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.06);
+      background: #fff;
+      vertical-align: middle;
+    }
     .meta { color: var(--muted); font-size: .9rem; margin-bottom: 1rem; }
     table { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 1rem; }
     .table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -435,12 +444,12 @@
       },
       '/sync-profiles': {
         title: 'Montando perfis estatísticos…',
-        msg: 'Consultando histórico de cada seleção. Pode levar até 5 minutos.',
-        long: true
+        msg: 'Consultando histórico API das seleções que jogam hoje na Copa 2026.',
+        long: false
       },
       '/analyze': {
         title: 'Gerando leituras…',
-        msg: 'Scraping bastidores + contexto na web, depois recomendação IA. Pode levar 2–3 min por jogo.',
+        msg: 'Perfis web das seleções de hoje, bastidores, contexto e recomendação IA. Pode levar 3–5 min.',
         long: true
       }
     };

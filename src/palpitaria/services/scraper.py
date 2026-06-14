@@ -5,7 +5,7 @@ import json
 from sqlalchemy.orm import Session
 
 from palpitaria.services.analyzer import default_match_context
-from palpitaria.services.llm_client import chat_completion
+from palpitaria.services.team_names import english_team_name
 
 TEAM_SYSTEM_PROMPT = """Você é um especialista em inteligência de bastidores de futebol.
 Analise notícias e extraia o "momento" de uma seleção.
@@ -65,9 +65,10 @@ def search_web_fallbacks(queries: list[str], max_results: int = 6) -> str:
     return ""
 
 
-def get_search_queries(team_name: str) -> list[str]:
+def get_search_queries(team_name: str, *, external_id: int | None = None) -> list[str]:
+    en = english_team_name(team_name, external_id)
     return [
-        f"{team_name} national team World Cup 2026 injuries lineup squad news",
+        f"{en} national team World Cup 2026 injuries lineup squad news",
         f"{team_name} seleção Copa do Mundo 2026 lesões escalação bastidores",
     ]
 
@@ -218,7 +219,9 @@ def collect_match_context(home_name: str, away_name: str, *, external_id: int | 
 
 
 def collect_team_insights(team_name: str, *, team_external_id: int | None = None) -> dict | None:
-    snippets = search_web_fallbacks(get_search_queries(team_name), max_results=6)
+    snippets = search_web_fallbacks(
+        get_search_queries(team_name, external_id=team_external_id), max_results=6
+    )
     if not snippets:
         return None
     squad = fetch_team_squad(team_external_id) if team_external_id else []
@@ -283,8 +286,9 @@ def enrich_fixture_analysis(
             log_callback(msg)
 
     if excluded:
-        log("  [2/3] Jogo descartado — scrap ignorado.")
-        return home_insights, away_insights, None
+        log("  [2/3] Coletando bastidores + contexto (mesmo descartado — informa a decisão)...")
+    else:
+        log("  [2/3] Scraping bastidores + contexto de jogo...")
 
     log(f"  [2a] Bastidores — {home_name}...")
     refreshed_home = refresh_team_insights(db, home_team_id, home_name)

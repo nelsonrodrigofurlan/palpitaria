@@ -48,12 +48,14 @@ Skill de contexto e workflow. Leia [context.md](context.md) antes de propor cód
 ## Pipeline de decisão (gols)
 
 ```
-Fixtures Copa → Perfil seleções → Filtro EXCLUSÃO (0-gol?) 
+Fixtures Copa → Perfil seleções (API + web na estreia) → Filtro EXCLUSÃO (0-gol?) 
     → DESCARTA se sim
     → Score potencial gols → Ranqueia candidatos
     → Verifica desfalques (injuries/lineup)
     → 3 cenários + explicabilidade → Filiais over_0_5 / over_1_5
 ```
+
+**Copa do Mundo:** perfil híbrido API+web **sempre**; LLM refina mercado com bastidores + histórico web. Ver [competition-data-strategies.md](competition-data-strategies.md).
 
 ## Princípios de engenharia
 
@@ -151,5 +153,6 @@ Sincronizar com `context.md`:
 ## Recursos
 
 - Contexto vivo: [context.md](context.md)
+- Estratégias por competição: [competition-data-strategies.md](competition-data-strategies.md)
 - API-Football docs: https://www.api-football.com/documentation-v3
 - football-data.org: https://www.football-data.org/documentation/api
