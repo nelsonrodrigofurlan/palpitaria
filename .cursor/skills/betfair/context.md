@@ -59,7 +59,7 @@ Toda recomendação deve incluir:
 | Camada | Direção |
 |--------|---------|
 | Coleta / ETL | Python (requests, scrapers, agendamento) |
-| Armazenamento | A definir (SQLite/Postgres para histórico) |
+| Armazenamento | Supabase (PostgreSQL) |
 | Análise / ML | pandas, scikit-learn; evoluir conforme necessidade |
 | Apresentação | A definir (web app provável para dashboards) |
 
@@ -248,7 +248,7 @@ Cada **tipo de entrada** opera como uma **filial** — uma "empresa" independent
 | 2026-06-13 | Filosofia anti-zero-gols | Exclusão por dados; nunca presumir |
 | 2026-06-13 | Desfalque ofensivo = critério de exclusão | Verificar titular fora antes de indicar |
 | 2026-06-13 | Nome produto: **Palpitaria FC** | Domínio palpitariafc.com.br |
-| 2026-06-13 | Stack: FastAPI + HTMX + SQLite + OpenRouter | Cloud Run depois; mobile via REST |
+| 2026-06-13 | Stack: FastAPI + HTMX + Supabase + OpenRouter | Cloud Run depois; mobile via REST |
 | 2026-06-13 | Dados: football-data.org v4 (`WC`) | Token do fundador; free tier |
 | 2026-06-13 | LLM MVP = Narrador Brasileiro | Ginga e leitura de jogo; via OpenRouter |
 | 2026-06-13 | LLM via OpenRouter + OpenAI SDK | Mesmo padrão SpeakFlow; `OPENAI_API_KEY` sk-or- |
@@ -259,7 +259,7 @@ Cada **tipo de entrada** opera como uma **filial** — uma "empresa" independent
 
 - [ ] Limiares numéricos do filtro (calibrar com dados reais das seleções)
 - [ ] Formato do app (web dashboard vs CLI vs notebook)
-- [ ] Banco de dados (SQLite local vs Postgres)
+- [x] Banco de dados — Supabase (PostgreSQL)
 - [ ] API key API-Football (fundador registrar free tier)
 - [ ] Viabilidade de acesso via sessão à exchange
 - [ ] Nome do produto (working title)

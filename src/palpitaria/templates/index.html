@@ -139,7 +139,7 @@
     <p>Nenhum jogo programado. Clique em "Sincronizar" para puxar o calendário da Copa.</p>
     <p style="font-size: 0.85rem; margin-top: 0.75rem;">
       Produção? Confira <a href="/health">/health</a> — deve mostrar <code>fixtures: 72</code> e <code>database: postgresql</code>.
-      Se aparecer <code>sqlite</code> ou <code>fixtures: 0</code>, o <code>DATABASE_URL</code> do Cloud Run não está apontando pro Supabase.
+      Local no Windows: use a URL do <strong>pooler</strong> Supabase (Connection pooling), não <code>db.*.supabase.co</code>.
     </p>
     {% else %}
     <p>{{ today_count }} jogo(s) hoje, mas nenhum passou no filtro anti-zero-gols. Veja a seção abaixo ou rode "Gerar Leituras de Hoje".</p>

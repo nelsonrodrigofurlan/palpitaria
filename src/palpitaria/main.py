@@ -65,7 +65,19 @@ app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")
 def on_startup() -> None:
     if settings.database_config_error:
         print(f"AVISO: {settings.database_config_error}", flush=True)
-    init_db()
+    try:
+        init_db()
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "translate host" in msg or "getaddrinfo" in msg or "ipv6" in msg or "unreachable" in msg:
+            print(
+                "\nERRO: não foi possível conectar ao Supabase.\n"
+                "Causa provável: DATABASE_URL usa db.PROJECT.supabase.co (só IPv6).\n"
+                "Solução: no Supabase Dashboard → Database → Connection pooling → Session,\n"
+                "copie a URL do pooler (aws-*-REGION.pooler.supabase.com) para DATABASE_URL no .env\n",
+                flush=True,
+            )
+        raise
 
 
 def _render_home(request: Request, db: Session) -> HTMLResponse:
@@ -394,7 +406,7 @@ def health(db: Session = Depends(get_db)) -> dict:
         "llm": settings.has_llm,
         "llm_provider": settings.llm_provider_label,
         "llm_model": settings.openai_chat_model,
-        "database": "sqlite" if settings.uses_sqlite else "postgresql",
+        "database": "postgresql",
         "database_host": settings.db_host_label,
         "timezone": settings.app_timezone,
     }

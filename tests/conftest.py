@@ -1,18 +1,33 @@
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+
+from palpitaria.config import settings
 from palpitaria.database import Base
-from palpitaria.models import Team, Fixture, TeamProfile
+
+
+def _require_supabase_engine():
+    if not settings.uses_postgres:
+        pytest.skip("DATABASE_URL Supabase (PostgreSQL) necessária para testes")
+    engine = create_engine(settings.db_url, pool_pre_ping=True)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:
+        pytest.skip(f"Supabase indisponível: {exc}")
+    Base.metadata.create_all(engine)
+    return engine
+
 
 @pytest.fixture(scope="session")
 def engine():
-    return create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    return _require_supabase_engine()
+
 
 @pytest.fixture(scope="session")
 def tables(engine):
-    Base.metadata.create_all(engine)
     yield
-    Base.metadata.drop_all(engine)
+
 
 @pytest.fixture
 def db_session(engine, tables):

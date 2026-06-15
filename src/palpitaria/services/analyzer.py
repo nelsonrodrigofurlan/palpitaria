@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session, joinedload
@@ -307,11 +308,148 @@ def _profile_stats_meta(profile) -> dict:
     return meta
 
 
+def profile_from_meta(meta: dict | None):
+    """Lightweight profile stand-in for infer_favorite when only meta dict exists."""
+    if not meta:
+        return None
+    return SimpleNamespace(
+        matches_sampled=int(meta.get("matches_sampled") or 0),
+        avg_goals_scored=float(meta.get("avg_goals_scored") or 0),
+        avg_goals_conceded=float(meta.get("avg_goals_conceded") or 0),
+        win_rate=float(meta.get("win_rate") or 0),
+        zero_zero_rate=float(meta.get("zero_zero_rate") or 0),
+        over_05_rate=float(meta.get("over_05_rate") or 0),
+        over_15_rate=float(meta.get("over_15_rate") or 0),
+        over_25_rate=float(meta.get("over_25_rate") or 0),
+        both_teams_score_rate=float(meta.get("both_teams_score_rate") or 0),
+    )
+
+
 def default_match_context() -> dict:
     return {
         "weather": "Aguardando coleta (clima no horário do jogo)",
         "referee": "Aguardando coleta (árbitro e estilo)",
         "pitch": "Aguardando coleta (estado do gramado)",
+    }
+
+
+@dataclass
+class FavoriteRead:
+    name: str
+    strength: float
+    basis: str
+    detail: str
+
+
+def _shrunk_mean(value: float, samples: int, *, prior: float, pseudo: int = 4) -> float:
+    if samples <= 0:
+        return prior
+    return (value * samples + prior * pseudo) / (samples + pseudo)
+
+
+def _decision_stats(profile) -> tuple[float, float, float, int, bool]:
+    """Capped stats for pick logic — 1-game outliers (ex.: 7-0 errado) não dominam."""
+    n = profile.matches_sampled
+    scored = profile.avg_goals_scored
+    conceded = profile.avg_goals_conceded
+    win = profile.win_rate
+    outlier_cap = False
+    if n <= 1 and scored > 3.0:
+        scored = 1.5
+        outlier_cap = True
+    if n <= 1 and win >= 0.99:
+        win = 0.45
+        outlier_cap = True
+    elif n == 2 and scored > 4.0:
+        scored = min(scored, 2.5)
+        outlier_cap = True
+    elif n == 2 and win >= 0.99:
+        win = 0.55
+        outlier_cap = True
+    return scored, conceded, win, n, outlier_cap
+
+
+def infer_favorite(
+    analysis: FixtureAnalysis,
+    home_profile,
+    away_profile,
+) -> FavoriteRead | None:
+    h_scored, h_conceded, h_win, h_n, h_outlier = _decision_stats(home_profile)
+    a_scored, a_conceded, a_win, a_n, a_outlier = _decision_stats(away_profile)
+
+    h_attack = _shrunk_mean(h_scored, h_n, prior=1.2)
+    a_attack = _shrunk_mean(a_scored, a_n, prior=1.2)
+    h_def = _shrunk_mean(h_conceded, h_n, prior=1.0)
+    a_def = _shrunk_mean(a_conceded, a_n, prior=1.0)
+
+    home_power = h_attack + max(a_def - 1.0, 0) * 0.45 + 0.12
+    away_power = a_attack + max(h_def - 1.0, 0) * 0.45
+    matchup_edge = home_power - away_power
+
+    win_rate_edge = 0.0
+    win_detail = ""
+    if min(h_n, a_n) >= settings.min_sample_for_win_rate_favorite:
+        h_win_s = _shrunk_mean(h_win, h_n, prior=0.33)
+        a_win_s = _shrunk_mean(a_win, a_n, prior=0.33)
+        win_rate_edge = h_win_s - a_win_s
+        win_detail = f"vitórias ajustadas {h_win_s:.0%} x {a_win_s:.0%}"
+
+    win_weight = 0.4 if min(h_n, a_n) >= settings.min_sample_for_win_rate_favorite else 0.0
+    edge = matchup_edge * (1 - win_weight) + win_rate_edge * win_weight
+
+    threshold = 0.28
+    if edge >= threshold:
+        return FavoriteRead(
+            name=analysis.home_name,
+            strength=min(edge / 1.2, 1.0),
+            basis="combined" if win_weight else "matchup",
+            detail=win_detail or f"força ajustada {home_power:.2f} vs {away_power:.2f}",
+        )
+    if edge <= -threshold and not a_outlier:
+        return FavoriteRead(
+            name=analysis.away_name,
+            strength=min(abs(edge) / 1.2, 1.0),
+            basis="combined" if win_weight else "matchup",
+            detail=win_detail or f"força ajustada {away_power:.2f} vs {home_power:.2f}",
+        )
+    if a_outlier and edge > -0.2 and home_power >= away_power * 0.92:
+        return FavoriteRead(
+            name=analysis.home_name,
+            strength=0.45,
+            basis="outlier_guard",
+            detail="amostra visitante suspeita (placar outlier descartado)",
+        )
+    if h_outlier and edge < 0.2 and away_power >= home_power * 0.92:
+        return FavoriteRead(
+            name=analysis.away_name,
+            strength=0.45,
+            basis="outlier_guard",
+            detail="amostra mandante suspeita (placar outlier descartado)",
+        )
+    return None
+
+
+def _winner_pick(
+    analysis: FixtureAnalysis,
+    home_profile,
+    away_profile,
+    *,
+    scope: str,
+    strong_verdict_rate: float = 0.70,
+) -> dict | None:
+    fav = infer_favorite(analysis, home_profile, away_profile)
+    if fav is None:
+        return None
+    verdict = "STRONG" if fav.strength >= strong_verdict_rate else "CANDIDATE"
+    prefix = "Fora do filtro de gols, mas " if scope == "alternate" else ""
+    return {
+        "market": f"VITÓRIA: {fav.name}",
+        "verdict": verdict,
+        "reason": (
+            f"{prefix}{fav.name} é favorito ({fav.basis}: {fav.detail}). "
+            "Leitura de 1X2 com estatística ajustada — amostras pequenas não decidem sozinhas."
+        ),
+        "scope": scope,
     }
 
 
@@ -325,8 +463,6 @@ def _select_best_pick(
     confidence = analysis.goal_potential_score
     over_15_rate = min(home_profile.over_15_rate, away_profile.over_15_rate)
     over_25_rate = min(home_profile.over_25_rate, away_profile.over_25_rate)
-    home_win_rate = home_profile.win_rate
-    away_win_rate = away_profile.win_rate
 
     # Lógica de decisão para a ÚNICA melhor recomendação
     
@@ -340,15 +476,11 @@ def _select_best_pick(
         }
 
     # 2. Dominância Clara (1X2)
-    if abs(home_win_rate - away_win_rate) >= 0.30 and confidence >= 90:
-        fav_name = analysis.home_name if home_win_rate > away_win_rate else analysis.away_name
-        fav_rate = max(home_win_rate, away_win_rate)
-        return {
-            "market": f"VITÓRIA: {fav_name}",
-            "verdict": "STRONG" if fav_rate >= 0.75 else "CANDIDATE",
-            "reason": f"Superioridade técnica clara. {fav_name} venceu {fav_rate:.0%} dos jogos recentes.",
-            "scope": "goals",
-        }
+    winner = _winner_pick(
+        analysis, home_profile, away_profile, scope="goals", strong_verdict_rate=0.75
+    )
+    if winner and confidence >= 90 and infer_favorite(analysis, home_profile, away_profile).strength >= 0.35:
+        return winner
 
     # 3. Segurança no Over 1.5
     if over_15_rate >= 0.72 and combined_avg >= 2.4 and confidence >= 90:
@@ -377,22 +509,12 @@ def _select_alternate_pick(
     avg_btts: float,
 ) -> dict:
     """Palpite fora do filtro de gols — 1X2 ou lay correct score."""
+    winner = _winner_pick(analysis, home_profile, away_profile, scope="alternate")
+    if winner:
+        return winner
+
     home_win_rate = home_profile.win_rate
     away_win_rate = away_profile.win_rate
-    win_diff = abs(home_win_rate - away_win_rate)
-
-    if win_diff >= 0.25:
-        fav_name = analysis.home_name if home_win_rate > away_win_rate else analysis.away_name
-        fav_rate = max(home_win_rate, away_win_rate)
-        return {
-            "market": f"VITÓRIA: {fav_name}",
-            "verdict": "STRONG" if fav_rate >= 0.70 else "CANDIDATE",
-            "reason": (
-                f"Fora do filtro de gols, mas {fav_name} domina o histórico recente "
-                f"({fav_rate:.0%} de vitórias). Leitura de favoritismo claro no 1X2."
-            ),
-            "scope": "alternate",
-        }
 
     if max_zero_zero >= settings.max_zero_zero_rate or avg_btts < settings.min_both_score_rate:
         return {
@@ -401,18 +523,6 @@ def _select_alternate_pick(
             "reason": (
                 f"Risco elevado de jogo fechado (0-0 em {max_zero_zero:.0%} ou BTTS {avg_btts:.0%}). "
                 "Lay no placar exato 0-0 como leitura alternativa — não é entrada no filtro de gols."
-            ),
-            "scope": "alternate",
-        }
-
-    if win_diff >= 0.15:
-        fav_name = analysis.home_name if home_win_rate > away_win_rate else analysis.away_name
-        return {
-            "market": f"VITÓRIA: {fav_name}",
-            "verdict": "CANDIDATE",
-            "reason": (
-                f"Leve favoritismo de {fav_name} com média combinada de {combined_avg:.1f} gols/jogo. "
-                "Palpite alternativo em resultado seco."
             ),
             "scope": "alternate",
         }
@@ -480,8 +590,7 @@ def attach_saved_reports(db: Session, analyses: list[FixtureAnalysis]) -> None:
             continue
         if report.llm_explanation:
             analysis.llm_explanation = report.llm_explanation
-        if report.best_pick_json:
-            analysis.best_pick = json.loads(report.best_pick_json)
+        # best_pick sempre recalculado em analyze_fixture (evita palpite obsoleto no banco)
         if report.match_context_json:
             analysis.match_context = json.loads(report.match_context_json)
         elif not analysis.excluded and report.llm_explanation:

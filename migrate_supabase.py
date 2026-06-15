@@ -15,8 +15,8 @@ from palpitaria.config import settings
 
 def migrate_to_supabase():
     print(f"Target Database: {settings.db_url}")
-    if "sqlite" in settings.db_url:
-        print("ERROR: DATABASE_URL is still pointing to SQLite. Please update your .env file.")
+    if not settings.uses_postgres:
+        print("ERROR: DATABASE_URL deve apontar para Supabase (PostgreSQL). Atualize o .env.")
         return
 
     engine = create_engine(settings.db_url)

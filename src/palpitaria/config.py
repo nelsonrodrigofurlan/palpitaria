@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     openai_chat_model: str = "~google/gemini-flash-latest"
     app_url: str = "http://localhost:8000"
 
-    database_url: str = "sqlite:///./data/palpitaria.db"
+    database_url: str = ""
     debug: bool = False
 
     @field_validator(
@@ -105,23 +105,27 @@ class Settings(BaseSettings):
         return url
 
     @property
-    def uses_sqlite(self) -> bool:
-        return self.db_url.startswith("sqlite")
+    def uses_postgres(self) -> bool:
+        return self.db_url.startswith("postgresql")
 
     @property
     def db_host_label(self) -> str:
-        if self.uses_sqlite:
-            return "sqlite (local)"
         parsed = urlparse(self.db_url)
         return parsed.hostname or "postgresql"
 
     @property
     def database_config_error(self) -> str | None:
-        """Cloud Run sem DATABASE_URL válida — app sobe, mas /health avisa."""
+        """Cloud Run / local sem DATABASE_URL Supabase válida."""
+        if self.uses_postgres:
+            return None
+
         if not _is_cloud_run():
-            return None
-        if self.database_url and not self.uses_sqlite:
-            return None
+            return (
+                "DATABASE_URL deve apontar para Supabase (PostgreSQL). "
+                "No Windows/rede IPv4, use o pooler (Session mode), não db.PROJECT.supabase.co — "
+                "Dashboard → Database → Connection pooling. "
+                "Ex.: postgresql://postgres.PROJECT_REF:SENHA@aws-1-sa-east-1.pooler.supabase.com:5432/postgres"
+            )
 
         diag = _database_env_diagnostics()
         if not any(item["present"] and item["length"] > 0 for item in diag.values()):
@@ -165,6 +169,8 @@ class Settings(BaseSettings):
     strong_over_05_historical_rate: float = 0.95
     min_offense_goals: float = 0.8
     strong_offense_goals: float = 1.5
+    min_sample_for_win_rate_favorite: int = 3
+    max_plausible_team_goals_per_match: int = 6
 
     # Copa — perfis híbridos API+web sempre; refresh configurável
     wc_web_profile_min_matches: int = 1  # estreias Copa: 1 placar explícito já destrava o filtro

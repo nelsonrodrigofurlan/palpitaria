@@ -174,6 +174,32 @@ def _match_dedup_key(match: dict) -> str:
     return f"{pair[0]}|{pair[1]}|{h}-{a}"
 
 
+def _team_goals_in_match(match: dict, team_name: str, external_id: int | None) -> int | None:
+    home = _extract_score(match, "home")
+    away = _extract_score(match, "away")
+    if home is None or away is None:
+        return None
+    if _team_matches_name(team_name, match["homeTeam"]["name"], external_id):
+        return home
+    if _team_matches_name(team_name, match["awayTeam"]["name"], external_id):
+        return away
+    return None
+
+
+def _filter_implausible_matches(
+    matches: list[dict], team_name: str, external_id: int | None = None
+) -> list[dict]:
+    """Drop outlier scores (wrong team / category) that poison tiny samples."""
+    cap = settings.max_plausible_team_goals_per_match
+    kept: list[dict] = []
+    for match in matches:
+        scored = _team_goals_in_match(match, team_name, external_id)
+        if scored is not None and scored > cap:
+            continue
+        kept.append(match)
+    return kept
+
+
 def _merge_match_lists(*lists: list[dict]) -> list[dict]:
     seen: set[str] = set()
     merged: list[dict] = []
@@ -268,6 +294,7 @@ def build_web_team_profile(
 
     api_matches = fetch_api_finished_matches(team)
     combined = _merge_match_lists(api_matches, web_matches)
+    combined = _filter_implausible_matches(combined, team.name, team.external_id)
     if not combined:
         log(f"  Web: nenhum placar válido para {team.name}")
         return None

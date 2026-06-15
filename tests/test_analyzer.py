@@ -130,7 +130,8 @@ def test_analyze_fixture_excluded_still_has_alternate_pick(db_session):
     assert analysis.best_pick is not None
     assert analysis.best_pick.get("scope") == "alternate"
     market = analysis.best_pick.get("market", "")
-    assert "VITÓRIA" in market or "LAY CORRECT SCORE" in market
+    assert "VITÓRIA: Alemanha" == market or market.startswith("VITÓRIA: Alemanha")
+    assert "Cura" not in market
 
     combined = next(c for c in analysis.criteria if c.name == "combined_avg_goals")
     assert combined.passed is True

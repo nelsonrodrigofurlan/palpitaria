@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 
 from palpitaria.config import settings
-from palpitaria.services.analyzer import FixtureAnalysis
+from types import SimpleNamespace
+
+from palpitaria.services.analyzer import FixtureAnalysis, infer_favorite, profile_from_meta
 from palpitaria.services.llm_client import chat_completion, llm_config_hint
 from palpitaria.services.scraper import _parse_json_from_llm
 
@@ -135,8 +137,16 @@ def refine_best_pick(analysis: FixtureAnalysis) -> dict | None:
         parsed = _parse_json_from_llm(response)
         if not parsed or not parsed.get("market"):
             return analysis.best_pick
+        market = parsed["market"]
+        home_p = profile_from_meta(analysis.home_stats_meta)
+        away_p = profile_from_meta(analysis.away_stats_meta)
+        if market.startswith("VITÓRIA:") and home_p and away_p:
+            picked = market.replace("VITÓRIA:", "", 1).strip()
+            fav = infer_favorite(analysis, home_p, away_p)
+            if fav and picked != fav.name:
+                return analysis.best_pick
         refined = {
-            "market": parsed["market"],
+            "market": market,
             "verdict": parsed.get("verdict") or analysis.best_pick.get("verdict", "CANDIDATE"),
             "reason": parsed.get("reason") or analysis.best_pick.get("reason", ""),
             "scope": analysis.best_pick.get("scope", "alternate" if analysis.excluded else "goals"),
