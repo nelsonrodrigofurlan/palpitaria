@@ -23,7 +23,7 @@ from palpitaria.services.analyzer import (
 )
 from palpitaria.services.explainer import explain_analysis, refine_best_pick
 from palpitaria.services.football_data_client import FootballDataClient
-from palpitaria.services.ingest import build_team_profiles, ingest_world_cup, localize_existing_teams
+from palpitaria.services.ingest import build_team_profiles, ingest_competition, localize_existing_teams
 from palpitaria.services.scraper import enrich_fixture_analysis
 from palpitaria.services.wc_profile_web import enrich_today_team_profiles
 
@@ -47,7 +47,7 @@ def main() -> None:
 
         log("[1/3] Sincronizando jogos (API)...")
         client = FootballDataClient()
-        ingest = ingest_world_cup(db, client, log_callback=log)
+        ingest = ingest_competition(db, client, log_callback=log)
         renamed = localize_existing_teams(db)
         log(f"  -> {ingest.get('fixtures', 0)} fixtures, {renamed} nomes PT-BR\n")
 

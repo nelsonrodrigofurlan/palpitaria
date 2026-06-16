@@ -1,11 +1,11 @@
 import pytest
 from datetime import datetime
 from unittest.mock import MagicMock
-from palpitaria.services.ingest import ingest_world_cup, build_team_profiles
+from palpitaria.services.ingest import ingest_competition, build_team_profiles
 from palpitaria.services.analyzer import get_today_context
 from palpitaria.models import Team, Fixture, TeamProfile
 
-def test_ingest_world_cup(db_session):
+def test_ingest_competition(db_session):
     # Mock client
     mock_client = MagicMock()
     mock_client.get_competition_matches.return_value = [
@@ -27,7 +27,7 @@ def test_ingest_world_cup(db_session):
     ]
     
     # Run ingest
-    result = ingest_world_cup(db_session, client=mock_client)
+    result = ingest_competition(db_session, client=mock_client)
     
     assert result["teams"] == 2
     assert result["fixtures"] == 1

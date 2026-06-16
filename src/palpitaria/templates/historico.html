@@ -2,8 +2,20 @@
 {% block title %}Histórico — Palpitaria FC{% endblock %}
 {% block content %}
 <header style="margin-bottom: 2rem;">
-  <h1>📅 Histórico Mensal</h1>
-  <p class="sub">Consolidado por filial — ao virar o mês, os cards ativos zeram e o fechamento aparece aqui</p>
+  <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+    <div>
+      <h1>📅 Histórico Mensal</h1>
+      <p class="sub">Consolidado por filial — ao virar o mês, os cards ativos zeram e o fechamento aparece aqui</p>
+    </div>
+    <div style="display: flex; align-items: center; gap: 1rem; background: white; padding: 0.5rem 1rem; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: var(--shadow);">
+      <span style="font-size: 0.85rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Campeonato:</span>
+      <select name="comp" onchange="window.location.href='/historico?comp=' + this.value" style="border: none; background: transparent; font-weight: 700; color: var(--blue); cursor: pointer; font-size: 1rem; outline: none;">
+        {% for comp in active_comps %}
+          <option value="{{ comp.code }}" {% if current_comp == comp.code %}selected{% endif %}>{{ comp.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
 </header>
 
 <div class="card" style="margin-bottom: 1.5rem; background: #f0fdf4; border-color: #bbf7d0;">
@@ -19,6 +31,7 @@
     <thead>
       <tr>
         <th>Período</th>
+        <th>Comp</th>
         <th>Filial</th>
         <th>Entradas</th>
         <th>Greens</th>
@@ -33,6 +46,7 @@
       {% for row in rows %}
       <tr>
         <td><strong>{{ row.period }}</strong></td>
+        <td><span class="badge" style="background: #e2e8f0; color: #475569; font-size: 0.65rem;">{{ row.competition_code }}</span></td>
         <td>{{ row.branch_name }}</td>
         <td>{{ row.bet_count }}</td>
         <td class="pass">

@@ -4,8 +4,16 @@
 <header style="margin-bottom: 2rem;">
   <div style="display: flex; justify-content: space-between; align-items: flex-start;">
     <div>
-      <p class="sub" style="font-size: 1.1rem; font-weight: 600; color: var(--blue); margin-bottom: 0.25rem;">Análise preditiva · Copa 2026 · jogos de hoje</p>
+      <p class="sub" style="font-size: 1.1rem; font-weight: 600; color: var(--blue); margin-bottom: 0.25rem;">Análise preditiva · jogos de hoje</p>
       <h1 style="font-size: 1.5rem; margin: 0;">Olá, {{ request.session.get('user_email').split('@')[0] }}! ⚽</h1>
+    </div>
+    <div style="display: flex; align-items: center; gap: 1rem; background: white; padding: 0.5rem 1rem; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: var(--shadow);">
+      <span style="font-size: 0.85rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Campeonato:</span>
+      <select name="comp" onchange="window.location.href='/?comp=' + this.value" style="border: none; background: transparent; font-weight: 700; color: var(--blue); cursor: pointer; font-size: 1rem; outline: none;">
+        {% for comp in active_comps %}
+          <option value="{{ comp.code }}" {% if current_comp == comp.code %}selected{% endif %}>{{ comp.name }}</option>
+        {% endfor %}
+      </select>
     </div>
   </div>
 </header>
@@ -23,13 +31,13 @@
 
 <div class="actions">
   {% if request.session.get('user_email') == 'nelson.r.furlan@gmail.com' %}
-    <form hx-post="/sync" hx-target="#sync-result" hx-swap="innerHTML">
+    <form hx-post="/sync?comp={{ current_comp }}" hx-target="#sync-result" hx-swap="innerHTML">
       <button type="submit" data-loading="sync">1. Sincronizar Jogos</button>
     </form>
-    <form hx-post="/sync-profiles" hx-target="#sync-result" hx-swap="innerHTML">
+    <form hx-post="/sync-profiles?comp={{ current_comp }}" hx-target="#sync-result" hx-swap="innerHTML">
       <button type="submit" class="secondary" data-loading="profiles">2. Atualizar Perfis (seleções de hoje)</button>
     </form>
-    <form hx-post="/analyze" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="600000">
+    <form hx-post="/analyze?comp={{ current_comp }}" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="600000">
       <button type="submit" class="yellow" data-loading="analyze">3. Gerar Leituras de Hoje</button>
     </form>
   {% else %}

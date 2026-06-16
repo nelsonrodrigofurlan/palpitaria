@@ -150,6 +150,7 @@ class Bet(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"), index=True)
     fixture_id: Mapped[int | None] = mapped_column(ForeignKey("fixtures.id"), nullable=True)
+    competition_code: Mapped[str | None] = mapped_column(String(10), index=True)
     description: Mapped[str] = mapped_column(String(200))  # ex: "EUA x Paraguai"
     odds: Mapped[float] = mapped_column(Float)
     stake: Mapped[float] = mapped_column(Float)
@@ -165,12 +166,13 @@ class BranchMonthlySummary(Base):
     """Consolidado mensal por filial — gerado ao virar o mês."""
 
     __tablename__ = "branch_monthly_summaries"
-    __table_args__ = (UniqueConstraint("branch_id", "year", "month", name="uq_branch_month"),)
+    __table_args__ = (UniqueConstraint("branch_id", "year", "month", "competition_code", name="uq_branch_month_comp"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"), index=True)
     year: Mapped[int] = mapped_column(Integer, index=True)
     month: Mapped[int] = mapped_column(Integer, index=True)
+    competition_code: Mapped[str] = mapped_column(String(10), default="WC", index=True)
     bet_count: Mapped[int] = mapped_column(Integer, default=0)
     win_count: Mapped[int] = mapped_column(Integer, default=0)
     loss_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -198,3 +200,24 @@ class UserInsight(Base):
 
     user: Mapped["User | None"] = relationship(back_populates="insights")
     team: Mapped["Team | None"] = relationship()
+
+
+class Competition(Base):
+    __tablename__ = "competitions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(10), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    season: Mapped[int] = mapped_column(Integer, default=2026)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ApiConfig(Base):
+    __tablename__ = "api_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(60), unique=True, index=True)
+    value: Mapped[str] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

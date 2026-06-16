@@ -50,16 +50,23 @@ def _extract_score(match: dict, side: str) -> int | None:
     return int(value) if value is not None else None
 
 
-def ingest_world_cup(
-    db: Session, client: FootballDataClient | None = None, log_callback=None
+def ingest_competition(
+    db: Session,
+    client: FootballDataClient | None = None,
+    competition_code: str | None = None,
+    log_callback=None,
 ) -> dict[str, int]:
+    from palpitaria.models import Competition
     def log(msg):
         if log_callback:
             log_callback(msg)
 
     client = client or FootballDataClient()
-    code = settings.world_cup_code
-    season = settings.world_cup_season
+    code = competition_code or settings.world_cup_code
+    
+    # Buscar season no banco se existir
+    comp_db = db.query(Competition).filter_by(code=code).first()
+    season = comp_db.season if comp_db else settings.world_cup_season
 
     log(f"Iniciando sincronização: {code} {season}")
     matches = client.get_competition_matches(code, season=season)
@@ -139,11 +146,11 @@ def build_team_profiles(
         from palpitaria.services.wc_profile_web import teams_playing_today
 
         ctx = get_today_context()
-        teams = teams_playing_today(db)
+        teams = teams_playing_today(db, competition_code=code)
         if not teams:
             log(f"Nenhum jogo de {code} hoje ({ctx.label}) — perfis não atualizados.")
             return 0
-        log(f"Copa {settings.world_cup_season}: {len(teams)} seleções com jogo hoje ({ctx.label})...")
+        log(f"Competição {code}: {len(teams)} times com jogo hoje ({ctx.label})...")
     else:
         team_ids: set[int] = set()
         for home_id, away_id in db.query(Fixture.home_team_id, Fixture.away_team_id).filter(

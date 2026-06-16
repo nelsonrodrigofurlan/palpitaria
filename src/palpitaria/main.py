@@ -28,7 +28,7 @@ from palpitaria.services.analyzer import (
 from palpitaria.services.match_context_utils import default_match_context
 from palpitaria.services.explainer import explain_analysis, refine_best_pick
 from palpitaria.services.football_data_client import FootballDataClient, FootballDataError
-from palpitaria.services.ingest import build_team_profiles, ingest_world_cup, localize_existing_teams
+from palpitaria.services.ingest import build_team_profiles, ingest_competition, localize_existing_teams
 from palpitaria.services.scraper import enrich_fixture_analysis
 from palpitaria.services.wc_profile_web import enrich_today_team_profiles
 from palpitaria.services.chat_service import process_user_message
@@ -125,20 +125,28 @@ def on_startup() -> None:
         raise
 
 
-def _render_home(request: Request, db: Session) -> HTMLResponse:
-    from palpitaria.models import FixtureReport
+def _render_home(request: Request, db: Session, comp_code: str | None = None) -> HTMLResponse:
+    from palpitaria.models import FixtureReport, Competition
     localize_existing_teams(db)
+    
+    # Buscar competições ativas
+    active_comps = db.query(Competition).filter_by(is_active=True).all()
+    
+    # Se não houver código, pega a primeira ativa ou default WC
+    if not comp_code:
+        comp_code = active_comps[0].code if active_comps else "WC"
+        
     today = get_today_context()
-    analyses = analyze_upcoming(db, limit=50, for_today_only=True)
+    analyses = analyze_upcoming(db, limit=50, for_today_only=True, competition_code=comp_code)
     attach_saved_reports(db, analyses)
     candidates = [a for a in analyses if not a.excluded]
     discarded = [a for a in analyses if a.excluded]
     profiles_ready, profiles_total = count_teams_with_profiles(db)
-    today_count = count_today_fixtures(db)
-    upcoming_count = count_upcoming_fixtures(db)
+    today_count = count_today_fixtures(db, competition_code=comp_code)
+    upcoming_count = count_upcoming_fixtures(db, competition_code=comp_code)
 
-    # Buscar última análise realizada
-    last_report = db.query(FixtureReport).order_by(FixtureReport.analyzed_at.desc()).first()
+    # Buscar última análise realizada para esta competição
+    last_report = db.query(FixtureReport).join(Fixture).filter(Fixture.competition_code == comp_code).order_by(FixtureReport.analyzed_at.desc()).first()
     last_analysis_at = last_report.analyzed_at if last_report else None
 
     return TEMPLATES.TemplateResponse(
@@ -158,6 +166,8 @@ def _render_home(request: Request, db: Session) -> HTMLResponse:
             "llm_provider": settings.llm_provider_label,
             "llm_model": settings.openai_chat_model,
             "last_analysis_at": last_analysis_at,
+            "active_comps": active_comps,
+            "current_comp": comp_code,
         },
     )
 
@@ -187,19 +197,22 @@ def logout(request: Request):
 
 
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request, db: Session = Depends(get_db), user=Depends(login_required)) -> HTMLResponse:
-    return _render_home(request, db)
+def home(request: Request, comp: str | None = None, db: Session = Depends(get_db), user=Depends(login_required)) -> HTMLResponse:
+    return _render_home(request, db, comp_code=comp)
 
 
 @app.post("/sync", response_class=HTMLResponse)
-def sync_data(request: Request, db: Session = Depends(get_db), user=Depends(admin_required)) -> HTMLResponse:
-    if not settings.has_football_token:
-        raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no .env")
+def sync_data(request: Request, comp: str | None = None, db: Session = Depends(get_db), user=Depends(admin_required)) -> HTMLResponse:
+    from palpitaria.services.config_service import get_api_config
+    token = get_api_config(db, "FOOTBALL_DATA_TOKEN")
+    if not token:
+        raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no Admin ou .env")
 
+    comp_code = comp or settings.world_cup_code
     try:
         LOG_BUFFER.clear()
-        client = FootballDataClient()
-        ingest_result = ingest_world_cup(db, client, log_callback=add_log)
+        client = FootballDataClient(token=token)
+        ingest_result = ingest_competition(db, client, competition_code=comp_code, log_callback=add_log)
         renamed = localize_existing_teams(db)
         if renamed:
             add_log(f"Nomes padronizados PT-BR: {renamed} seleções")
@@ -215,25 +228,28 @@ def sync_data(request: Request, db: Session = Depends(get_db), user=Depends(admi
         {
             "ingest": ingest_result,
             "profiles": None,
-            "message": "Jogos sincronizados. No dia do jogo, clique em Atualizar Perfis (só seleções de hoje).",
+            "message": f"Jogos de {comp_code} sincronizados. No dia do jogo, clique em Atualizar Perfis.",
             "redirect": True,
         },
     )
 
 
 @app.post("/sync-profiles", response_class=HTMLResponse)
-def sync_profiles(request: Request, db: Session = Depends(get_db), user=Depends(admin_required)) -> HTMLResponse:
-    if not settings.has_football_token:
-        raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no .env")
+def sync_profiles(request: Request, comp: str | None = None, db: Session = Depends(get_db), user=Depends(admin_required)) -> HTMLResponse:
+    from palpitaria.services.config_service import get_api_config
+    token = get_api_config(db, "FOOTBALL_DATA_TOKEN")
+    if not token:
+        raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no Admin ou .env")
 
+    comp_code = comp or settings.world_cup_code
     try:
         LOG_BUFFER.clear()
-        client = FootballDataClient()
+        client = FootballDataClient(token=token)
         profiles = build_team_profiles(
             db,
             client,
             log_callback=add_log,
-            competition_code=settings.world_cup_code,
+            competition_code=comp_code,
             today_only=True,
         )
         ready, total = count_teams_with_profiles(db)
@@ -251,7 +267,7 @@ def sync_profiles(request: Request, db: Session = Depends(get_db), user=Depends(
             "ingest": None,
             "profiles": profiles,
             "message": (
-                f"Perfis API: {profiles} seleção(ões) de hoje ({today_ctx.label}). "
+                f"Perfis API: {profiles} seleção(ões) de {comp_code} hoje ({today_ctx.label}). "
                 f"Total prontas no banco: {ready}/{total}. "
                 f"Estreias sem jogo na API → passo 3 (perfil web)."
             ),
@@ -261,23 +277,30 @@ def sync_profiles(request: Request, db: Session = Depends(get_db), user=Depends(
 
 
 @app.post("/analyze")
-def run_analysis(request: Request, db: Session = Depends(get_db), user=Depends(admin_required)):
-    if not settings.has_football_token:
-        raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no .env")
+def run_analysis(request: Request, comp: str | None = None, db: Session = Depends(get_db), user=Depends(admin_required)):
+    from palpitaria.services.config_service import get_api_config
+    
+    token = get_api_config(db, "FOOTBALL_DATA_TOKEN")
+    llm_key = get_api_config(db, "OPENAI_API_KEY")
+    llm_base = get_api_config(db, "OPENAI_BASE_URL")
 
-    if not settings.has_llm:
+    if not token:
+        raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no Admin ou .env")
+
+    if not llm_key:
         raise HTTPException(
             status_code=400,
-            detail="Configure OPENAI_API_KEY no .env para coletar bastidores/contexto e gerar a recomendação.",
+            detail="Configure OPENAI_API_KEY no Admin ou .env para coletar bastidores/contexto e gerar a recomendação.",
         )
 
+    comp_code = comp or settings.world_cup_code
     today = get_today_context()
-    analyses = analyze_upcoming(db, limit=50, for_today_only=True)
+    analyses = analyze_upcoming(db, limit=50, for_today_only=True, competition_code=comp_code)
     explained = 0
     candidates = 0
 
     if not analyses:
-        detail = f"Nenhum jogo programado para hoje ({today.label})."
+        detail = f"Nenhum jogo de {comp_code} programado para hoje ({today.label})."
         if request.headers.get("HX-Request"):
             return HTMLResponse(
                 f'<div class="alert">{detail} Volte no dia do jogo.</div>',
@@ -286,13 +309,13 @@ def run_analysis(request: Request, db: Session = Depends(get_db), user=Depends(a
         raise HTTPException(status_code=400, detail=detail)
 
     LOG_BUFFER.clear()
-    add_log(f"Iniciando pipeline de {len(analyses)} jogos (web perfis → API → scrap → recomendação)...")
+    add_log(f"Iniciando pipeline de {len(analyses)} jogos de {comp_code} (web perfis → API → scrap → recomendação)...")
 
-    add_log("[0/3] Perfis híbridos — API Copa + histórico web das seleções de hoje...")
-    web_profiles = enrich_today_team_profiles(db, log_callback=add_log, force_refresh=True)
+    add_log(f"[0/3] Perfis híbridos — API {comp_code} + histórico web das seleções de hoje...")
+    web_profiles = enrich_today_team_profiles(db, log_callback=add_log, force_refresh=True, competition_code=comp_code)
     add_log(f"  -> {web_profiles} perfil(is) enriquecido(s) via web")
 
-    analyses = analyze_upcoming(db, limit=50, for_today_only=True)
+    analyses = analyze_upcoming(db, limit=50, for_today_only=True, competition_code=comp_code)
     add_log(f"Reavaliando {len(analyses)} jogos após perfis web...")
 
     for analysis in analyses:
@@ -318,6 +341,14 @@ def run_analysis(request: Request, db: Session = Depends(get_db), user=Depends(a
         analysis.match_context = match_context or default_match_context()
 
         add_log("  [3/3] Decisão de mercado (LLM + web + bastidores)...")
+        # Passar chaves dinâmicas para o LLM se necessário (ou o llm_client já usa o singleton?)
+        # O llm_client usa settings. Eu deveria atualizar o singleton ou passar as chaves.
+        # Vou atualizar o singleton temporariamente ou mudar o llm_client para aceitar chaves.
+        
+        # Por enquanto, vou atualizar o settings temporariamente (não é o ideal, mas funciona para o request)
+        settings.openai_api_key = llm_key
+        settings.openai_base_url = llm_base
+        
         analysis.best_pick = refine_best_pick(analysis)
         explanation = explain_analysis(analysis)
         analysis.llm_explanation = explanation
@@ -351,13 +382,17 @@ def get_logs(user=Depends(admin_required)):
 
 
 @app.get("/branches", response_class=HTMLResponse)
-def list_branches(request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
-    from palpitaria.models import Branch, Bet
-    from sqlalchemy import func
+def list_branches(request: Request, comp: str | None = None, db: Session = Depends(get_db), user=Depends(login_required)):
+    from palpitaria.models import Branch, Bet, Competition
+    from sqlalchemy import func, extract
 
     close_past_months(db)
     cy, cm = current_period()
     period_str = period_label(cy, cm)
+
+    # Buscar competições ativas
+    active_comps = db.query(Competition).filter_by(is_active=True).all()
+    comp_code = comp or (active_comps[0].code if active_comps else "WC")
 
     # Filtrar filiais do usuário
     branches = db.query(Branch).filter(Branch.user_id == user.id).all()
@@ -373,19 +408,28 @@ def list_branches(request: Request, db: Session = Depends(get_db), user=Depends(
     # Calculate P&L summary for each branch
     stats = {}
     for b in branches:
-        total_pl = db.query(func.sum(Bet.profit_loss)).filter(Bet.branch_id == b.id).scalar() or 0.0
-        win_count = db.query(Bet).filter(Bet.branch_id == b.id, Bet.outcome == "WIN").count()
-        loss_count = db.query(Bet).filter(Bet.branch_id == b.id, Bet.outcome == "LOSS").count()
-        bet_count = win_count + loss_count + db.query(Bet).filter(
-            Bet.branch_id == b.id, Bet.outcome == "PENDING"
-        ).count()
+        query = db.query(Bet).filter(
+            Bet.branch_id == b.id,
+            extract("year", Bet.created_at) == cy,
+            extract("month", Bet.created_at) == cm
+        )
+        if comp_code:
+            query = query.filter(Bet.competition_code == comp_code)
+
+        bets = query.order_by(Bet.created_at.desc()).all()
+        
+        total_pl = sum(bet.profit_loss for bet in bets)
+        win_count = sum(1 for bet in bets if bet.outcome == "WIN")
+        loss_count = sum(1 for bet in bets if bet.outcome == "LOSS")
+        bet_count = len(bets)
+        
         stats[b.id] = {
             "total_pl": round(total_pl, 2),
             "win_count": win_count,
             "loss_count": loss_count,
             "bet_count": bet_count,
             "hit_rate_pct": hit_rate_pct(win_count, bet_count),
-            "bets": db.query(Bet).filter(Bet.branch_id == b.id).order_by(Bet.created_at.desc()).limit(10).all()
+            "bets": bets[:10]
         }
 
     return TEMPLATES.TemplateResponse(
@@ -396,28 +440,36 @@ def list_branches(request: Request, db: Session = Depends(get_db), user=Depends(
             "stats": stats,
             "current_period": period_str,
             "app_timezone": settings.app_timezone,
+            "active_comps": active_comps,
+            "current_comp": comp_code,
         }
     )
 
 
 @app.get("/historico", response_class=HTMLResponse)
-def list_historico(request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
-    from palpitaria.models import BranchMonthlySummary, Branch
+def list_historico(request: Request, comp: str | None = None, db: Session = Depends(get_db), user=Depends(login_required)):
+    from palpitaria.models import BranchMonthlySummary, Branch, Competition
 
     close_past_months(db)
     cy, cm = current_period()
 
-    summaries = (
+    # Buscar competições ativas
+    active_comps = db.query(Competition).filter_by(is_active=True).all()
+    comp_code = comp or (active_comps[0].code if active_comps else "WC")
+
+    query = (
         db.query(BranchMonthlySummary)
         .join(Branch)
         .filter(Branch.user_id == user.id)
-        .order_by(
-            BranchMonthlySummary.year.desc(),
-            BranchMonthlySummary.month.desc(),
-            BranchMonthlySummary.branch_id,
-        )
-        .all()
     )
+    if comp_code:
+        query = query.filter(BranchMonthlySummary.competition_code == comp_code)
+        
+    summaries = query.order_by(
+        BranchMonthlySummary.year.desc(),
+        BranchMonthlySummary.month.desc(),
+        BranchMonthlySummary.branch_id,
+    ).all()
 
     rows = []
     for s in summaries:
@@ -433,6 +485,7 @@ def list_historico(request: Request, db: Session = Depends(get_db), user=Depends
                 "total_pl": s.total_pl,
                 "hit_rate_pct": hit_rate_pct(s.win_count, s.bet_count),
                 "closed_at": s.closed_at,
+                "competition_code": s.competition_code,
             }
         )
 
@@ -443,6 +496,8 @@ def list_historico(request: Request, db: Session = Depends(get_db), user=Depends
             "rows": rows,
             "current_period": period_label(cy, cm),
             "app_timezone": settings.app_timezone,
+            "active_comps": active_comps,
+            "current_comp": comp_code,
         }
     )
 
@@ -479,6 +534,14 @@ def chat_page(request: Request, db: Session = Depends(get_db), user=Depends(logi
 
 @app.post("/chat/send", response_class=HTMLResponse)
 async def chat_send(request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
+    from palpitaria.services.config_service import get_api_config
+    
+    llm_key = get_api_config(db, "OPENAI_API_KEY")
+    llm_base = get_api_config(db, "OPENAI_BASE_URL")
+    if llm_key:
+        settings.openai_api_key = llm_key
+        settings.openai_base_url = llm_base
+
     form = await request.form()
     message = form.get("message")
     if not message:
@@ -504,6 +567,7 @@ async def add_bet(request: Request, db: Session = Depends(get_db), user=Depends(
     
     form = await request.form()
     branch_id = int(form.get("branch_id"))
+    comp_code = form.get("competition_code")
     
     # Verificar se a filial pertence ao usuário
     branch = db.query(Branch).filter(Branch.id == branch_id, Branch.user_id == user.id).first()
@@ -524,11 +588,12 @@ async def add_bet(request: Request, db: Session = Depends(get_db), user=Depends(
         odds=odds,
         stake=stake,
         outcome=outcome,
-        profit_loss=pl
+        profit_loss=pl,
+        competition_code=comp_code or settings.world_cup_code
     )
     db.add(bet)
     db.commit()
-    return RedirectResponse(url="/branches", status_code=303)
+    return RedirectResponse(url=f"/branches?comp={comp_code}" if comp_code else "/branches", status_code=303)
 
 
 @app.post("/branches/delete/{branch_id}")
@@ -644,6 +709,63 @@ def admin_delete_user(target_id: int, db: Session = Depends(get_db), user=Depend
         db.delete(target)
         db.commit()
     return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@app.get("/admin/config", response_class=HTMLResponse)
+def admin_config(request: Request, db: Session = Depends(get_db), user=Depends(admin_required)):
+    from palpitaria.models import ApiConfig, Competition
+    configs = db.query(ApiConfig).order_by(ApiConfig.key).all()
+    competitions = db.query(Competition).order_by(Competition.is_active.desc(), Competition.name).all()
+    cy, cm = current_period()
+    return TEMPLATES.TemplateResponse(
+        request,
+        "admin_config.html",
+        {
+            "configs": configs,
+            "competitions": competitions,
+            "current_period": period_label(cy, cm),
+            "app_timezone": settings.app_timezone,
+        }
+    )
+
+
+@app.post("/admin/config/api/update")
+async def admin_update_api_config(request: Request, db: Session = Depends(get_db), user=Depends(admin_required)):
+    from palpitaria.models import ApiConfig
+    form = await request.form()
+    key = form.get("key")
+    value = form.get("value")
+    
+    cfg = db.query(ApiConfig).filter_by(key=key).first()
+    if cfg:
+        cfg.value = value
+        db.commit()
+    return RedirectResponse(url="/admin/config", status_code=303)
+
+
+@app.post("/admin/config/competition/add")
+async def admin_add_competition(request: Request, db: Session = Depends(get_db), user=Depends(admin_required)):
+    from palpitaria.models import Competition
+    form = await request.form()
+    code = form.get("code").upper()
+    name = form.get("name")
+    season = int(form.get("season", 2026))
+    
+    if not db.query(Competition).filter_by(code=code).first():
+        new_comp = Competition(code=code, name=name, season=season, is_active=True)
+        db.add(new_comp)
+        db.commit()
+    return RedirectResponse(url="/admin/config", status_code=303)
+
+
+@app.post("/admin/config/competition/toggle/{comp_id}")
+def admin_toggle_competition(comp_id: int, db: Session = Depends(get_db), user=Depends(admin_required)):
+    from palpitaria.models import Competition
+    comp = db.query(Competition).filter_by(id=comp_id).first()
+    if comp:
+        comp.is_active = not comp.is_active
+        db.commit()
+    return RedirectResponse(url="/admin/config", status_code=303)
 
 
 @app.get("/health")

@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent / "src"))
 
 from palpitaria.database import Base
-from palpitaria.models import Team, Fixture, TeamProfile, Branch, User, UserInsight
+from palpitaria.models import Team, Fixture, TeamProfile, Branch, User, UserInsight, Competition, ApiConfig
 from palpitaria.config import settings
 from palpitaria.services.auth import get_password_hash
 
@@ -51,6 +51,20 @@ def migrate_to_supabase():
             ))
             conn.execute(text(
                 "ALTER TABLE user_insights ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id)"
+            ))
+            conn.execute(text(
+                "ALTER TABLE bets ADD COLUMN IF NOT EXISTS competition_code VARCHAR(10)"
+            ))
+            conn.execute(text(
+                "ALTER TABLE branch_monthly_summaries ADD COLUMN IF NOT EXISTS competition_code VARCHAR(10) DEFAULT 'WC'"
+            ))
+            # Drop old constraint if exists and add new one
+            conn.execute(text(
+                "ALTER TABLE branch_monthly_summaries DROP CONSTRAINT IF EXISTS uq_branch_month"
+            ))
+            
+            conn.execute(text(
+                "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS season INTEGER DEFAULT 2026"
             ))
 
         # 0. Seed Users
@@ -107,6 +121,28 @@ def migrate_to_supabase():
         
         # Link existing insights to Nelson if they don't have a user
         db.query(UserInsight).filter(UserInsight.user_id == None).update({UserInsight.user_id: nelson.id})
+
+        # 2. Seed Competitions
+        print("Seeding competitions...")
+        comps = [
+            {"code": "WC", "name": "Copa do Mundo 2026", "is_active": True},
+            {"code": "BSA", "name": "Brasileirão Série A", "is_active": True},
+            {"code": "CDB", "name": "Copa do Brasil", "is_active": True},
+        ]
+        for c_data in comps:
+            exists = db.query(Competition).filter_by(code=c_data["code"]).first()
+            if not exists:
+                db.add(Competition(**c_data))
+
+        # 3. Seed API Configs (non-sensitive only)
+        print("Seeding API configs...")
+        configs = [
+            {"key": "OPENAI_BASE_URL", "value": settings.openai_base_url, "description": "URL base para LLM (ex: OpenRouter)"},
+        ]
+        for cfg in configs:
+            exists = db.query(ApiConfig).filter_by(key=cfg["key"]).first()
+            if not exists:
+                db.add(ApiConfig(**cfg))
         
         db.commit()
         print("Migration and seeding complete!")

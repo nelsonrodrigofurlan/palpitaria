@@ -46,7 +46,7 @@ def period_label(year: int, month: int) -> str:
 
 def close_past_months(db: Session) -> list[BranchMonthlySummary]:
     """
-    Arquiva entradas de meses anteriores (por filial) e remove do ledger ativo.
+    Arquiva entradas de meses anteriores (por filial e competição) e remove do ledger ativo.
     O mês corrente permanece nos cards de Filiais.
     """
     cy, cm = current_period()
@@ -54,20 +54,22 @@ def close_past_months(db: Session) -> list[BranchMonthlySummary]:
     if not bets:
         return []
 
-    groups: dict[tuple[int, int, int], list[Bet]] = defaultdict(list)
+    # Agrupar por (ano, mês, branch_id, competition_code)
+    groups: dict[tuple[int, int, int, str], list[Bet]] = defaultdict(list)
     for bet in bets:
         y, m = bet_local_period(bet.created_at)
         if (y, m) < (cy, cm):
-            groups[(y, m, bet.branch_id)].append(bet)
+            comp = bet.competition_code or "WC"
+            groups[(y, m, bet.branch_id, comp)].append(bet)
 
     if not groups:
         return []
 
     created: list[BranchMonthlySummary] = []
-    for (year, month, branch_id), branch_bets in sorted(groups.items()):
+    for (year, month, branch_id, comp_code), branch_bets in sorted(groups.items()):
         existing = (
             db.query(BranchMonthlySummary)
-            .filter_by(branch_id=branch_id, year=year, month=month)
+            .filter_by(branch_id=branch_id, year=year, month=month, competition_code=comp_code)
             .one_or_none()
         )
         if existing:
@@ -86,6 +88,7 @@ def close_past_months(db: Session) -> list[BranchMonthlySummary]:
             branch_id=branch_id,
             year=year,
             month=month,
+            competition_code=comp_code,
             bet_count=len(branch_bets),
             win_count=wins,
             loss_count=losses,

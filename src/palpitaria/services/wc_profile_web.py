@@ -254,10 +254,10 @@ def profile_needs_refresh(profile: TeamProfile | None, *, force: bool = False) -
     return age > timedelta(hours=settings.wc_web_profile_refresh_hours)
 
 
-def teams_playing_today(db: Session, tz_name: str | None = None) -> list[Team]:
+def teams_playing_today(db: Session, tz_name: str | None = None, competition_code: str | None = None) -> list[Team]:
     ctx = get_today_context(tz_name)
     fixtures = (
-        _scheduled_fixtures_query(db)
+        _scheduled_fixtures_query(db, competition_code=competition_code)
         .filter(Fixture.utc_date >= ctx.start_utc)
         .filter(Fixture.utc_date < ctx.end_utc)
         .all()
@@ -341,6 +341,7 @@ def enrich_today_team_profiles(
     log_callback=None,
     tz_name: str | None = None,
     force_refresh: bool = False,
+    competition_code: str | None = None,
 ) -> int:
     """Always merge API + web history for today's teams (hybrid profile persists)."""
     if not settings.has_llm:
@@ -348,10 +349,10 @@ def enrich_today_team_profiles(
             log_callback("Web profiles: OPENAI_API_KEY necessária — pulando.")
         return 0
 
-    teams = teams_playing_today(db, tz_name)
+    teams = teams_playing_today(db, tz_name, competition_code=competition_code)
     if not teams:
         if log_callback:
-            log_callback("Web profiles: nenhum jogo hoje.")
+            log_callback(f"Web profiles: nenhum jogo de {competition_code or 'WC'} hoje.")
         return 0
 
     updated = 0

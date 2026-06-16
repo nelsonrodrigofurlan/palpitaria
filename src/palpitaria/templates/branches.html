@@ -2,8 +2,20 @@
 {% block title %}Filiais — Palpitaria FC{% endblock %}
 {% block content %}
 <header style="margin-bottom: 2rem;">
-  <h1>🏢 Gestão de Filiais</h1>
-  <p class="sub">Acompanhe o P&L de cada mercado separadamente · <strong>Mês ativo: {{ current_period }}</strong></p>
+  <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+    <div>
+      <h1>🏢 Gestão de Filiais</h1>
+      <p class="sub">Acompanhe o P&L de cada mercado separadamente · <strong>Mês ativo: {{ current_period }}</strong></p>
+    </div>
+    <div style="display: flex; align-items: center; gap: 1rem; background: white; padding: 0.5rem 1rem; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: var(--shadow);">
+      <span style="font-size: 0.85rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Campeonato:</span>
+      <select name="comp" onchange="window.location.href='/branches?comp=' + this.value" style="border: none; background: transparent; font-weight: 700; color: var(--blue); cursor: pointer; font-size: 1rem; outline: none;">
+        {% for comp in active_comps %}
+          <option value="{{ comp.code }}" {% if current_comp == comp.code %}selected{% endif %}>{{ comp.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
 </header>
 
 <div class="card" style="margin-bottom: 2rem; background: #f1f5f9;">
@@ -55,6 +67,7 @@
 
     <form action="/branches/add-bet" method="POST" style="display: flex; flex-direction: column; gap: 0.75rem;">
       <input type="hidden" name="branch_id" value="{{ b.id }}">
+      <input type="hidden" name="competition_code" value="{{ current_comp }}">
       
       <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <input type="text" name="description" placeholder="Jogo (ex: EUA x Paraguai)" required style="flex: 2; min-width: 150px; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">

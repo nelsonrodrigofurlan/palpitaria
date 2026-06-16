@@ -126,27 +126,31 @@ def get_today_context(tz_name: str | None = None) -> TodayContext:
     )
 
 
-def _scheduled_fixtures_query(db: Session):
-    return (
+def _scheduled_fixtures_query(db: Session, competition_code: str | None = None):
+    query = (
         db.query(Fixture)
         .options(joinedload(Fixture.home_team), joinedload(Fixture.away_team))
-        .filter(Fixture.competition_code == settings.world_cup_code)
         .filter(Fixture.status.in_(["SCHEDULED", "TIMED", "IN_PLAY"]))
     )
+    if competition_code:
+        query = query.filter(Fixture.competition_code == competition_code)
+    else:
+        query = query.filter(Fixture.competition_code == settings.world_cup_code)
+    return query
 
 
-def count_today_fixtures(db: Session, tz_name: str | None = None) -> int:
+def count_today_fixtures(db: Session, tz_name: str | None = None, competition_code: str | None = None) -> int:
     ctx = get_today_context(tz_name)
     return (
-        _scheduled_fixtures_query(db)
+        _scheduled_fixtures_query(db, competition_code=competition_code)
         .filter(Fixture.utc_date >= ctx.start_utc)
         .filter(Fixture.utc_date < ctx.end_utc)
         .count()
     )
 
 
-def count_upcoming_fixtures(db: Session) -> int:
-    return _scheduled_fixtures_query(db).count()
+def count_upcoming_fixtures(db: Session, competition_code: str | None = None) -> int:
+    return _scheduled_fixtures_query(db, competition_code=competition_code).count()
 
 
 def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
@@ -696,8 +700,9 @@ def analyze_upcoming(
     *,
     for_today_only: bool = True,
     tz_name: str | None = None,
+    competition_code: str | None = None,
 ) -> list[FixtureAnalysis]:
-    query = _scheduled_fixtures_query(db)
+    query = _scheduled_fixtures_query(db, competition_code=competition_code)
     if for_today_only:
         ctx = get_today_context(tz_name)
         query = query.filter(Fixture.utc_date >= ctx.start_utc).filter(Fixture.utc_date < ctx.end_utc)
