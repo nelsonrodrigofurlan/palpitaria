@@ -19,7 +19,8 @@ from palpitaria.services.ingest import (
     save_team_profile,
 )
 from palpitaria.services.llm_client import chat_completion
-from palpitaria.services.scraper import _parse_json_from_llm, search_web_stalking
+from palpitaria.services.llm_utils import _parse_json_from_llm
+from palpitaria.services.scraper import search_web_stalking
 from palpitaria.services.profile_matches import build_matches_snapshot
 from palpitaria.services.team_names import names_for_matching
 from palpitaria.services.wc_stalking_queries import team_results_queries

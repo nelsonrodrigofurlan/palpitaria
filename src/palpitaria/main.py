@@ -6,14 +6,16 @@ from zoneinfo import ZoneInfo
 from datetime import datetime
 import os
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 
 from palpitaria.config import settings
 from palpitaria.database import get_db, init_db
+from palpitaria.services.auth import verify_password, get_user_by_email
 from palpitaria.services.analyzer import (
     analyze_upcoming,
     attach_saved_reports,
@@ -29,6 +31,7 @@ from palpitaria.services.football_data_client import FootballDataClient, Footbal
 from palpitaria.services.ingest import build_team_profiles, ingest_world_cup, localize_existing_teams
 from palpitaria.services.scraper import enrich_fixture_analysis
 from palpitaria.services.wc_profile_web import enrich_today_team_profiles
+from palpitaria.services.chat_service import process_user_message
 from palpitaria.services.ledger import close_past_months, current_period, period_label
 from palpitaria.models import Fixture
 
@@ -68,7 +71,30 @@ TEMPLATES.env.filters["kickoff"] = _format_kickoff
 TEMPLATES.env.filters["tojson"] = lambda obj: json.dumps(obj, ensure_ascii=False)
 
 app = FastAPI(title="Palpitaria FC", description="Leitura fundamentada para mercados de gols")
+app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
+
+
+def get_current_user(request: Request, db: Session = Depends(get_db)):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return None
+    from palpitaria.models import User
+    return db.query(User).filter(User.id == user_id).first()
+
+
+def login_required(request: Request, user=Depends(get_current_user)):
+    if not user:
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(headers={"HX-Redirect": "/login"})
+        raise HTTPException(status_code=303, headers={"Location": "/login"})
+    return user
+
+
+def admin_required(request: Request, user=Depends(login_required)):
+    if user.email != "nelson.r.furlan@gmail.com":
+        raise HTTPException(status_code=403, detail="Acesso negado: peça beça pro Pai")
+    return user
 
 
 @app.on_event("startup")
@@ -100,6 +126,7 @@ def on_startup() -> None:
 
 
 def _render_home(request: Request, db: Session) -> HTMLResponse:
+    from palpitaria.models import FixtureReport
     localize_existing_teams(db)
     today = get_today_context()
     analyses = analyze_upcoming(db, limit=50, for_today_only=True)
@@ -109,6 +136,10 @@ def _render_home(request: Request, db: Session) -> HTMLResponse:
     profiles_ready, profiles_total = count_teams_with_profiles(db)
     today_count = count_today_fixtures(db)
     upcoming_count = count_upcoming_fixtures(db)
+
+    # Buscar última análise realizada
+    last_report = db.query(FixtureReport).order_by(FixtureReport.analyzed_at.desc()).first()
+    last_analysis_at = last_report.analyzed_at if last_report else None
 
     return TEMPLATES.TemplateResponse(
         request,
@@ -126,17 +157,42 @@ def _render_home(request: Request, db: Session) -> HTMLResponse:
             "has_llm": settings.has_llm,
             "llm_provider": settings.llm_provider_label,
             "llm_model": settings.openai_chat_model,
+            "last_analysis_at": last_analysis_at,
         },
     )
 
 
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    if request.session.get("user_id"):
+        return RedirectResponse(url="/", status_code=303)
+    return TEMPLATES.TemplateResponse(request, "login.html", {"error": None})
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login(request: Request, email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    user = get_user_by_email(db, email)
+    if not user or not verify_password(password, user.hashed_password):
+        return TEMPLATES.TemplateResponse(request, "login.html", {"error": "E-mail ou senha inválidos."})
+    
+    request.session["user_id"] = user.id
+    request.session["user_email"] = user.email
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.get("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse(url="/login", status_code=303)
+
+
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+def home(request: Request, db: Session = Depends(get_db), user=Depends(login_required)) -> HTMLResponse:
     return _render_home(request, db)
 
 
 @app.post("/sync", response_class=HTMLResponse)
-def sync_data(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+def sync_data(request: Request, db: Session = Depends(get_db), user=Depends(admin_required)) -> HTMLResponse:
     if not settings.has_football_token:
         raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no .env")
 
@@ -166,7 +222,7 @@ def sync_data(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
 
 
 @app.post("/sync-profiles", response_class=HTMLResponse)
-def sync_profiles(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+def sync_profiles(request: Request, db: Session = Depends(get_db), user=Depends(admin_required)) -> HTMLResponse:
     if not settings.has_football_token:
         raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no .env")
 
@@ -205,7 +261,7 @@ def sync_profiles(request: Request, db: Session = Depends(get_db)) -> HTMLRespon
 
 
 @app.post("/analyze")
-def run_analysis(request: Request, db: Session = Depends(get_db)):
+def run_analysis(request: Request, db: Session = Depends(get_db), user=Depends(admin_required)):
     if not settings.has_football_token:
         raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no .env")
 
@@ -289,13 +345,13 @@ def run_analysis(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/logs")
-def get_logs():
+def get_logs(user=Depends(admin_required)):
     content = "\n".join(LOG_BUFFER)
     return HTMLResponse(f"<pre>{content}</pre>")
 
 
 @app.get("/branches", response_class=HTMLResponse)
-def list_branches(request: Request, db: Session = Depends(get_db)):
+def list_branches(request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
     from palpitaria.models import Branch, Bet
     from sqlalchemy import func
 
@@ -303,15 +359,16 @@ def list_branches(request: Request, db: Session = Depends(get_db)):
     cy, cm = current_period()
     period_str = period_label(cy, cm)
 
-    branches = db.query(Branch).all()
+    # Filtrar filiais do usuário
+    branches = db.query(Branch).filter(Branch.user_id == user.id).all()
     
-    # If no branches exist, create defaults
+    # If no branches exist for this user, create defaults
     if not branches:
-        over05 = Branch(name="Over 0.5 Goals", slug="over_0_5", description="Mercado de pelo menos 1 gol")
-        over15 = Branch(name="Over 1.5 Goals", slug="over_1_5", description="Mercado de pelo menos 2 gols")
+        over05 = Branch(name="Over 0.5 Goals", slug=f"over_0_5_{user.id}", description="Mercado de pelo menos 1 gol", user_id=user.id)
+        over15 = Branch(name="Over 1.5 Goals", slug=f"over_1_5_{user.id}", description="Mercado de pelo menos 2 gols", user_id=user.id)
         db.add_all([over05, over15])
         db.commit()
-        branches = db.query(Branch).all()
+        branches = db.query(Branch).filter(Branch.user_id == user.id).all()
 
     # Calculate P&L summary for each branch
     stats = {}
@@ -344,14 +401,16 @@ def list_branches(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/historico", response_class=HTMLResponse)
-def list_historico(request: Request, db: Session = Depends(get_db)):
-    from palpitaria.models import BranchMonthlySummary
+def list_historico(request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
+    from palpitaria.models import BranchMonthlySummary, Branch
 
     close_past_months(db)
     cy, cm = current_period()
 
     summaries = (
         db.query(BranchMonthlySummary)
+        .join(Branch)
+        .filter(Branch.user_id == user.id)
         .order_by(
             BranchMonthlySummary.year.desc(),
             BranchMonthlySummary.month.desc(),
@@ -389,7 +448,7 @@ def list_historico(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/sobre", response_class=HTMLResponse)
-def about_page(request: Request):
+def about_page(request: Request, user=Depends(login_required)):
     cy, cm = current_period()
     return TEMPLATES.TemplateResponse(
         request,
@@ -401,18 +460,61 @@ def about_page(request: Request):
     )
 
 
+@app.get("/chat", response_class=HTMLResponse)
+def chat_page(request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
+    from palpitaria.models import UserInsight
+    cy, cm = current_period()
+    # Pegar as últimas interações do usuário
+    history = db.query(UserInsight).filter(UserInsight.user_id == user.id).order_by(UserInsight.created_at.desc()).limit(20).all()
+    return TEMPLATES.TemplateResponse(
+        request,
+        "chat.html",
+        {
+            "current_period": period_label(cy, cm),
+            "app_timezone": settings.app_timezone,
+            "history": reversed(history),
+        }
+    )
+
+
+@app.post("/chat/send", response_class=HTMLResponse)
+async def chat_send(request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
+    form = await request.form()
+    message = form.get("message")
+    if not message:
+        return ""
+    
+    result = process_user_message(db, message, user_id=user.id)
+    
+    return TEMPLATES.TemplateResponse(
+        request,
+        "partials/chat_message.html",
+        {
+            "user_message": message,
+            "ai_response": result.get("response"),
+            "is_valid": result.get("is_valid"),
+            "evaluation": result.get("evaluation"),
+        }
+    )
+
+
 @app.post("/branches/add-bet")
-async def add_bet(request: Request, db: Session = Depends(get_db)):
+async def add_bet(request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
     from palpitaria.models import Bet, Branch
     
     form = await request.form()
     branch_id = int(form.get("branch_id"))
+    
+    # Verificar se a filial pertence ao usuário
+    branch = db.query(Branch).filter(Branch.id == branch_id, Branch.user_id == user.id).first()
+    if not branch:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
     description = form.get("description")
     odds = float(form.get("odds"))
     stake = float(form.get("stake"))
     outcome = form.get("outcome") # WIN, LOSS, PENDING
     
-    branch = db.query(Branch).filter_by(id=branch_id).first()
     commission_rate = branch.commission_rate if branch else 6.5
     pl = compute_bet_pl(stake, odds, outcome or "PENDING", commission_rate)
 
@@ -430,8 +532,12 @@ async def add_bet(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/branches/delete/{branch_id}")
-def delete_branch(branch_id: int, db: Session = Depends(get_db)):
+def delete_branch(branch_id: int, db: Session = Depends(get_db), user=Depends(login_required)):
     from palpitaria.models import Branch, Bet
+    branch = db.query(Branch).filter(Branch.id == branch_id, Branch.user_id == user.id).first()
+    if not branch:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
     db.query(Bet).filter(Bet.branch_id == branch_id).delete()
     db.query(Branch).filter(Branch.id == branch_id).delete()
     db.commit()
@@ -439,22 +545,22 @@ def delete_branch(branch_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/branches/add")
-async def add_branch(request: Request, db: Session = Depends(get_db)):
+async def add_branch(request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
     from palpitaria.models import Branch
     form = await request.form()
     name = form.get("name")
     description = form.get("description")
     commission_rate = float(form.get("commission_rate", 6.5))
-    slug = name.lower().replace(" ", "_")
+    slug = f"{name.lower().replace(' ', '_')}_{user.id}"
     
-    branch = Branch(name=name, slug=slug, description=description, commission_rate=commission_rate)
+    branch = Branch(name=name, slug=slug, description=description, commission_rate=commission_rate, user_id=user.id)
     db.add(branch)
     db.commit()
     return RedirectResponse(url="/branches", status_code=303)
 
 
 @app.post("/branches/bet/update/{bet_id}")
-async def update_bet_outcome(bet_id: int, request: Request, db: Session = Depends(get_db)):
+async def update_bet_outcome(bet_id: int, request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
     from palpitaria.models import Bet, Branch
 
     form = await request.form()
@@ -462,11 +568,11 @@ async def update_bet_outcome(bet_id: int, request: Request, db: Session = Depend
     if outcome not in ("WIN", "LOSS", "PENDING"):
         raise HTTPException(status_code=400, detail="Status inválido")
 
-    bet = db.query(Bet).filter(Bet.id == bet_id).one_or_none()
+    bet = db.query(Bet).join(Branch).filter(Bet.id == bet_id, Branch.user_id == user.id).one_or_none()
     if bet is None:
-        raise HTTPException(status_code=404, detail="Entrada não encontrada")
+        raise HTTPException(status_code=404, detail="Entrada não encontrada ou acesso negado")
 
-    branch = db.query(Branch).filter_by(id=bet.branch_id).first()
+    branch = bet.branch
     commission_rate = branch.commission_rate if branch else 6.5
 
     bet.outcome = outcome
@@ -476,11 +582,68 @@ async def update_bet_outcome(bet_id: int, request: Request, db: Session = Depend
 
 
 @app.post("/branches/bet/delete/{bet_id}")
-def delete_bet(bet_id: int, db: Session = Depends(get_db)):
-    from palpitaria.models import Bet
+def delete_bet(bet_id: int, db: Session = Depends(get_db), user=Depends(login_required)):
+    from palpitaria.models import Bet, Branch
+    bet = db.query(Bet).join(Branch).filter(Bet.id == bet_id, Branch.user_id == user.id).one_or_none()
+    if not bet:
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
     db.query(Bet).filter(Bet.id == bet_id).delete()
     db.commit()
     return RedirectResponse(url="/branches", status_code=303)
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+def admin_users(request: Request, db: Session = Depends(get_db), user=Depends(admin_required)):
+    from palpitaria.models import User
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    cy, cm = current_period()
+    return TEMPLATES.TemplateResponse(
+        request,
+        "admin_users.html",
+        {
+            "users": users,
+            "current_period": period_label(cy, cm),
+            "app_timezone": settings.app_timezone,
+        }
+    )
+
+
+@app.post("/admin/users/add")
+async def admin_add_user(request: Request, db: Session = Depends(get_db), user=Depends(admin_required)):
+    from palpitaria.models import User
+    from palpitaria.services.auth import get_password_hash
+    form = await request.form()
+    
+    new_user = User(
+        email=form.get("email"),
+        full_name=form.get("full_name"),
+        hashed_password=get_password_hash(form.get("password")),
+        is_active=True
+    )
+    db.add(new_user)
+    db.commit()
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@app.post("/admin/users/toggle/{target_id}")
+def admin_toggle_user(target_id: int, db: Session = Depends(get_db), user=Depends(admin_required)):
+    from palpitaria.models import User
+    target = db.query(User).filter(User.id == target_id).first()
+    if target and target.email != "nelson.r.furlan@gmail.com":
+        target.is_active = not target.is_active
+        db.commit()
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@app.post("/admin/users/delete/{target_id}")
+def admin_delete_user(target_id: int, db: Session = Depends(get_db), user=Depends(admin_required)):
+    from palpitaria.models import User
+    target = db.query(User).filter(User.id == target_id).first()
+    if target and target.email != "nelson.r.furlan@gmail.com":
+        db.delete(target)
+        db.commit()
+    return RedirectResponse(url="/admin/users", status_code=303)
 
 
 @app.get("/health")

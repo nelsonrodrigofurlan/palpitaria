@@ -25,6 +25,20 @@ class Team(Base):
     profiles: Mapped[list["TeamProfile"]] = relationship(back_populates="team")
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    hashed_password: Mapped[str] = mapped_column(String(255))
+    full_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    branches: Mapped[list["Branch"]] = relationship(back_populates="user")
+    insights: Mapped[list["UserInsight"]] = relationship(back_populates="user")
+
+
 class Fixture(Base):
     __tablename__ = "fixtures"
 
@@ -119,11 +133,13 @@ class Branch(Base):
     __tablename__ = "branches"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(60), unique=True)
     slug: Mapped[str] = mapped_column(String(30), unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     commission_rate: Mapped[float] = mapped_column(Float, default=6.5)  # % de comissão (ex: 6.5)
 
+    user: Mapped["User | None"] = relationship(back_populates="branches")
     bets: Mapped[list["Bet"]] = relationship(back_populates="branch")
     monthly_summaries: Mapped[list["BranchMonthlySummary"]] = relationship(back_populates="branch")
 
@@ -165,3 +181,20 @@ class BranchMonthlySummary(Base):
     closed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     branch: Mapped["Branch"] = relationship(back_populates="monthly_summaries")
+
+
+class UserInsight(Base):
+    """Percepções do usuário avaliadas pela IA para compor a base de conhecimento."""
+
+    __tablename__ = "user_insights"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    content: Mapped[str] = mapped_column(Text)  # O que o usuário disse
+    evaluation: Mapped[str | None] = mapped_column(Text, nullable=True)  # Análise da IA
+    is_valid: Mapped[bool] = mapped_column(default=False)  # Se passou pelo crivo dos pilares
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User | None"] = relationship(back_populates="insights")
+    team: Mapped["Team | None"] = relationship()

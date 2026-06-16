@@ -10,8 +10,9 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent / "src"))
 
 from palpitaria.database import Base
-from palpitaria.models import Team, Fixture, TeamProfile, Branch
+from palpitaria.models import Team, Fixture, TeamProfile, Branch, User, UserInsight
 from palpitaria.config import settings
+from palpitaria.services.auth import get_password_hash
 
 def migrate_to_supabase():
     print(f"Target Database: {settings.db_url}")
@@ -44,18 +45,68 @@ def migrate_to_supabase():
             conn.execute(text(
                 "ALTER TABLE fixtures ADD COLUMN IF NOT EXISTS venue_state VARCHAR(40)"
             ))
+            # New columns for Auth
+            conn.execute(text(
+                "ALTER TABLE branches ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id)"
+            ))
+            conn.execute(text(
+                "ALTER TABLE user_insights ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id)"
+            ))
 
-        # 1. Create Default Branches
+        # 0. Seed Users
+        print("Seeding users...")
+        users_to_seed = [
+            {
+                "email": "nelson.r.furlan@gmail.com",
+                "full_name": "Nelson Furlan",
+                "password": "Palpitaria@2026!"
+            },
+            {
+                "email": "danilo.furlan@gmail.com",
+                "full_name": "Danilo Furlan",
+                "password": "Danilo#Secure@2026"
+            },
+            {
+                "email": "welligton.oliveira@gmail.com",
+                "full_name": "Welligton Oliveira",
+                "password": "Welligton!Strong#2026"
+            }
+        ]
+
+        for u_data in users_to_seed:
+            user = db.query(User).filter_by(email=u_data["email"]).first()
+            if not user:
+                hashed = get_password_hash(u_data["password"])
+                user = User(
+                    email=u_data["email"],
+                    hashed_password=hashed,
+                    full_name=u_data["full_name"],
+                    is_active=True
+                )
+                db.add(user)
+                db.flush()
+                print(f"User {u_data['email']} created.")
+            else:
+                print(f"User {u_data['email']} already exists.")
+
+        nelson = db.query(User).filter_by(email="nelson.r.furlan@gmail.com").first()
+
+        # 1. Create Default Branches and link to Nelson
         print("Seeding default branches...")
         branches = [
-            {"name": "Over 0.5 Goals", "slug": "over_0_5", "description": "Mercado de pelo menos 1 gol"},
-            {"name": "Over 1.5 Goals", "slug": "over_1_5", "description": "Mercado de pelo menos 2 gols"},
-            {"name": "1X2 (Match Odds)", "slug": "1x2", "description": "Vitória, Empate ou Derrota"},
+            {"name": "Over 0.5 Goals", "slug": "over_0_5", "description": "Mercado de pelo menos 1 gol", "user_id": nelson.id},
+            {"name": "Over 1.5 Goals", "slug": "over_1_5", "description": "Mercado de pelo menos 2 gols", "user_id": nelson.id},
+            {"name": "1X2 (Match Odds)", "slug": "1x2", "description": "Vitória, Empate ou Derrota", "user_id": nelson.id},
         ]
         for b_data in branches:
             exists = db.query(Branch).filter_by(slug=b_data["slug"]).first()
             if not exists:
                 db.add(Branch(**b_data))
+            elif exists.user_id is None:
+                exists.user_id = nelson.id
+        
+        # Link existing insights to Nelson if they don't have a user
+        db.query(UserInsight).filter(UserInsight.user_id == None).update({UserInsight.user_id: nelson.id})
         
         db.commit()
         print("Migration and seeding complete!")

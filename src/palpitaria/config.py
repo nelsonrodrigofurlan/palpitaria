@@ -66,6 +66,7 @@ class Settings(BaseSettings):
 
     database_url: str = ""
     debug: bool = False
+    secret_key: str = "palpitaria-secret-key-2026-secure-v1"
 
     @field_validator(
         "database_url",

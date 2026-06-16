@@ -750,12 +750,38 @@
           </a>
         </li>
         <li class="nav-item">
+          <a href="/chat" class="{% if request.url.path.startswith('/chat') %}active{% endif %}">
+            💡 Inteligência Coletiva
+          </a>
+        </li>
+        <li class="nav-item">
           <a href="/sobre" class="{% if request.url.path.startswith('/sobre') %}active{% endif %}">
             ℹ️ Sobre
           </a>
         </li>
+        {% if request.session.get('user_email') == 'nelson.r.furlan@gmail.com' %}
+        <li class="nav-item">
+          <a href="/admin/users" class="{% if request.url.path.startswith('/admin') %}active{% endif %}">
+            ⚙️ Admin
+          </a>
+        </li>
+        {% endif %}
       </ul>
     </nav>
+
+    {% if request.session.get("user_id") %}
+    <div style="margin-top: auto; padding-top: 2rem; border-top: 1px solid #e2e8f0;">
+      <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+        <span style="font-size: 0.75rem; color: var(--muted); font-weight: 600; text-transform: uppercase;">Usuário</span>
+        <span style="font-size: 0.85rem; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ request.session.get('user_email') }}">
+          {{ request.session.get('user_email') }}
+        </span>
+        <a href="/logout" style="font-size: 0.75rem; color: var(--muted); display: flex; align-items: center; gap: 0.4rem; margin-top: 0.25rem; font-weight: 500; transition: color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='var(--muted)'">
+          🚪 Sair do Sistema
+        </a>
+      </div>
+    </div>
+    {% endif %}
   </aside>
 
   <main class="main-content">

@@ -4,7 +4,8 @@ import json
 
 from sqlalchemy.orm import Session
 
-from palpitaria.services.analyzer import default_match_context
+from palpitaria.services.match_context_utils import default_match_context
+from palpitaria.services.llm_utils import _parse_json_from_llm
 from palpitaria.services.team_names import english_team_name
 
 TEAM_SYSTEM_PROMPT = """Você é um especialista em inteligência de bastidores de futebol.
@@ -149,21 +150,6 @@ def analyze_team_moment(team_name: str, raw_content: str, *, squad: list[str] | 
         return {"error": "No JSON found in LLM response"}
     except Exception as exc:
         return {"error": str(exc)}
-
-
-def _parse_json_from_llm(response: str) -> dict | None:
-    cleaned = response.strip()
-    if cleaned.startswith("```"):
-        lines = cleaned.split("\n")
-        cleaned = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-    start = cleaned.find("{")
-    end = cleaned.rfind("}") + 1
-    if start != -1 and end > start:
-        try:
-            return json.loads(cleaned[start:end])
-        except json.JSONDecodeError:
-            return None
-    return None
 
 
 def analyze_match_context(home_name: str, away_name: str, raw_content: str) -> dict:

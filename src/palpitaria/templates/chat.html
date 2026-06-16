@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Chat Auditor — Palpitaria FC{% endblock %}
+{% block content %}
+<header style="margin-bottom: 2rem;">
+  <h1>💡 Inteligência Coletiva</h1>
+  <p class="sub">Compartilhe percepções técnicas ou bastidores. O Auditor Sênior filtra com <strong>RIGOR EXTREMO</strong> o que entra para a base de conhecimento global da IA.</p>
+</header>
+
+<div class="card" style="display: flex; flex-direction: column; height: 65vh; max-height: 700px;">
+  <div id="chat-window" style="flex: 1; overflow-y: auto; padding: 1rem; background: #f8fafc; border-radius: 12px; margin-bottom: 1rem; border: 1px solid #e2e8f0;">
+    {% for msg in history %}
+      <div class="chat-bubble user">
+        <strong>Você:</strong> {{ msg.content }}
+      </div>
+      <div class="chat-bubble ai {% if msg.is_valid %}valid{% endif %}">
+        <strong>Auditor:</strong> {{ msg.evaluation or 'Percepção processada.' }}
+        {% if msg.is_valid %}
+          <div class="status-tag">✓ Validado para Conhecimento</div>
+        {% endif %}
+      </div>
+    {% endfor %}
+    <div id="new-messages"></div>
+  </div>
+
+  <form hx-post="/chat/send" hx-target="#new-messages" hx-swap="beforeend" hx-on::after-request="this.reset(); document.getElementById('chat-window').scrollTop = document.getElementById('chat-window').scrollHeight;" style="display: flex; gap: 0.75rem;">
+    <input type="text" name="message" placeholder="Compartilhe uma percepção técnica ou bastidor sobre uma seleção ou jogo..." required style="flex: 1; padding: 0.75rem 1rem; border-radius: 12px; border: 1px solid #cbd5e1; font-size: 0.95rem;">
+    <button type="submit" class="secondary">Enviar</button>
+  </form>
+</div>
+
+<style>
+  .chat-bubble {
+    padding: 0.75rem 1rem;
+    border-radius: 16px;
+    margin-bottom: 1rem;
+    max-width: 85%;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+  .chat-bubble.user {
+    background: #e2e8f0;
+    align-self: flex-end;
+    margin-left: auto;
+    color: var(--text);
+  }
+  .chat-bubble.ai {
+    background: white;
+    border: 1px solid #e2e8f0;
+    align-self: flex-start;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+  .chat-bubble.ai.valid {
+    border-left: 4px solid var(--green);
+  }
+  .status-tag {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--green);
+    margin-top: 0.5rem;
+    text-transform: uppercase;
+  }
+</style>
+{% endblock %}

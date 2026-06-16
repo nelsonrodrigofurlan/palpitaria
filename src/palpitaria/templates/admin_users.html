@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Gestão de Usuários — Palpitaria FC{% endblock %}
+
+{% block content %}
+<header style="margin-bottom: 2rem;">
+  <h1>👥 Gestão de Usuários</h1>
+  <p class="sub">Manutenção de acesso ao sistema Palpitaria FC</p>
+</header>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2 style="margin: 0;">Usuários Cadastrados</h2>
+        <button class="secondary" onclick="document.getElementById('add-user-modal').style.display='flex'; document.getElementById('modal-overlay').style.display='block';">
+            + Novo Usuário
+        </button>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>E-mail</th>
+                    <th>Status</th>
+                    <th>Criado em</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in users %}
+                <tr>
+                    <td><strong>{{ u.full_name or '—' }}</strong></td>
+                    <td>{{ u.email }}</td>
+                    <td>
+                        <span class="badge {% if u.is_active %}ok{% else %}err{% endif %}">
+                            {{ 'Ativo' if u.is_active else 'Inativo' }}
+                        </span>
+                    </td>
+                    <td>{{ u.created_at.strftime('%d/%m/%Y') }}</td>
+                    <td>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <form hx-post="/admin/users/toggle/{{ u.id }}" hx-target="body">
+                                <button type="submit" class="brief-btn" style="color: var(--muted);">
+                                    {{ 'Desativar' if u.is_active else 'Ativar' }}
+                                </button>
+                            </form>
+                            {% if u.email != 'nelson.r.furlan@gmail.com' %}
+                            <form hx-post="/admin/users/delete/{{ u.id }}" hx-confirm="Tem certeza que deseja excluir este usuário?" hx-target="body">
+                                <button type="submit" class="brief-btn" style="color: #ef4444;">Excluir</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Novo Usuário -->
+<div class="didactic-modal" id="add-user-modal" style="display: none;">
+    <div class="didactic-header">
+        <h3 style="margin:0; font-weight:800; color:var(--blue);">Novo Usuário</h3>
+        <button class="didactic-close" onclick="document.getElementById('add-user-modal').style.display='none'; document.getElementById('modal-overlay').style.display='none';">×</button>
+    </div>
+    <div class="didactic-body">
+        <form action="/admin/users/add" method="post" style="display: flex; flex-direction: column; gap: 1rem;">
+            <div>
+                <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.25rem;">Nome Completo</label>
+                <input type="text" name="full_name" required style="width: 100%; padding: 0.6rem; border: 1px solid #cbd5e1; border-radius: 8px;">
+            </div>
+            <div>
+                <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.25rem;">E-mail</label>
+                <input type="email" name="email" required style="width: 100%; padding: 0.6rem; border: 1px solid #cbd5e1; border-radius: 8px;">
+            </div>
+            <div>
+                <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.25rem;">Senha</label>
+                <input type="password" name="password" required style="width: 100%; padding: 0.6rem; border: 1px solid #cbd5e1; border-radius: 8px;">
+            </div>
+            <button type="submit" class="secondary" style="margin-top: 0.5rem;">Cadastrar Usuário</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,10 @@
+<div class="chat-bubble user">
+  <strong>Você:</strong> {{ user_message }}
+</div>
+<div class="chat-bubble ai {% if is_valid %}valid{% endif %}">
+  <strong>Auditor:</strong> {{ ai_response }}
+  {% if is_valid %}
+    <div class="status-tag">✓ Validado para Conhecimento</div>
+    <p style="font-size: 0.75rem; color: var(--muted); margin: 0.25rem 0 0;">{{ evaluation }}</p>
+  {% endif %}
+</div>

@@ -12,6 +12,8 @@ from palpitaria.config import settings
 from palpitaria.models import Fixture
 from palpitaria.services.ingest import latest_profile
 from palpitaria.services.team_names import localize_team_name
+from palpitaria.services.chat_service import get_valid_insights_for_team
+from palpitaria.services.match_context_utils import default_match_context
 
 
 @dataclass
@@ -280,6 +282,10 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
     analysis.home_stats_meta = _profile_stats_meta(home_profile)
     analysis.away_stats_meta = _profile_stats_meta(away_profile)
 
+    # Injetar percepções validadas do usuário
+    analysis.home_stats_meta["user_insights"] = get_valid_insights_for_team(db, fixture.home_team_id)
+    analysis.away_stats_meta["user_insights"] = get_valid_insights_for_team(db, fixture.away_team_id)
+
     # Attach insights if available
     if home_profile.insights_json:
         analysis.home_insights = json.loads(home_profile.insights_json)
@@ -477,14 +483,6 @@ def profile_from_meta(meta: dict | None):
         over_25_rate=float(meta.get("over_25_rate") or 0),
         both_teams_score_rate=float(meta.get("both_teams_score_rate") or 0),
     )
-
-
-def default_match_context() -> dict:
-    return {
-        "weather": "Aguardando coleta (clima no horário do jogo)",
-        "referee": "Aguardando coleta (árbitro e estilo)",
-        "pitch": "Aguardando coleta (estado do gramado)",
-    }
 
 
 @dataclass

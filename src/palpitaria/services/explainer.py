@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from palpitaria.services.analyzer import FixtureAnalysis, infer_favorite, profile_from_meta
 from palpitaria.services.llm_client import chat_completion, llm_config_hint
-from palpitaria.services.scraper import _parse_json_from_llm
+from palpitaria.services.llm_utils import _parse_json_from_llm
 
 SYSTEM_PROMPT = """Você é o analista sênior da Palpitaria FC. Sua missão é fornecer uma leitura técnica, precisa e sem "oba-oba" sobre o potencial de gols de uma partida.
 
@@ -26,6 +26,8 @@ Tom de voz: Profissional, analítico, direto ao ponto. Use termos como 'valor', 
 Máximo 3 parágrafos, até 1500 caracteres no total. Sempre conclua a última frase — nunca pare no meio.
 Não invente dados.
 7. ELENCO: Só cite jogadores presentes em home_insights/away_insights. "Não convocado" ≠ "lesionado/fora". Se não estiver nos dados, não mencione.
+
+8. PERCEPÇÕES COLETIVAS (INTELIGÊNCIA HÍBRIDA): Se houver 'user_insights' nos dados, trate-os como conhecimento de campo EXTREMAMENTE VALIDADO pelo Auditor Sênior. Essas informações vêm da comunidade, mas passaram por um filtro impiedoso de veracidade. Use-as para dar o "toque final" de inteligência que os números sozinhos não alcançam.
 """
 
 EXPLANATION_MAX_CHARS = 1500
