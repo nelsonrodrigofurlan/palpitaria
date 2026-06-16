@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Sobre — Palpitaria FC{% endblock %}
+{% block content %}
+<header style="margin-bottom: 2rem;">
+  <h1>ℹ️ Sobre o Sistema</h1>
+  <p class="sub">Arquitetura técnica e fundamentação analítica do Palpitaria FC</p>
+</header>
+
+<div class="card">
+  <h2>🏗️ Arquitetura Técnica</h2>
+  <p style="margin-bottom: 1.5rem;">O Palpitaria FC é construído sobre uma stack moderna e resiliente, focada em processamento de dados e explicabilidade via IA.</p>
+  
+  <div style="text-align: center; margin: 2rem 0;">
+    <img src="/static/assets/arquitetura_tecnica.png" alt="Arquitetura Técnica Palpitaria FC" style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: var(--shadow);">
+  </div>
+
+  <div class="insights-grid">
+    <div class="insight-card" style="background: #f8fafc; padding: 1.25rem; border-radius: 12px; border: 1px solid #e2e8f0;">
+      <strong>📡 Fontes de Dados</strong>
+      <ul style="font-size: 0.85rem; margin-top: 0.5rem; padding-left: 1.2rem;">
+        <li><strong>API-Football:</strong> Estatísticas detalhadas, eventos e escalações.</li>
+        <li><strong>football-data.org:</strong> Calendário oficial e tabelas da Copa 2026.</li>
+        <li><strong>Web Stalking:</strong> Scraping em tempo real de bastidores e histórico web (amistosos/eliminatórias).</li>
+      </ul>
+    </div>
+    <div class="insight-card" style="background: #f8fafc; padding: 1.25rem; border-radius: 12px; border: 1px solid #e2e8f0;">
+      <strong>🧠 Inteligência Artificial</strong>
+      <ul style="font-size: 0.85rem; margin-top: 0.5rem; padding-left: 1.2rem;">
+        <li><strong>OpenRouter (Gemini/Claude):</strong> Orquestração de leitura de dados brutos para recomendações fundamentadas.</li>
+        <li><strong>Pipeline Híbrido:</strong> Fusão de dados estruturados (API) com dados não estruturados (Web).</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>⚖️ Fundamentação Analítica</h2>
+  <p>Nossa metodologia é baseada em dois pilares inegociáveis:</p>
+  
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
+    <div style="border-left: 4px solid var(--blue); padding-left: 1rem;">
+      <strong style="color: var(--blue); display: block; margin-bottom: 0.5rem;">1. Anti-Zero-Gols (Exclusão)</strong>
+      <p style="font-size: 0.9rem; margin: 0;">Antes de buscar o lucro, buscamos a segurança. O sistema aplica filtros rigorosos de exclusão. Se um jogo tem qualquer indício estatístico de 0-0 ou trava defensiva, ele é descartado dos mercados Over.</p>
+    </div>
+    <div style="border-left: 4px solid var(--green); padding-left: 1rem;">
+      <strong style="color: var(--green); display: block; margin-bottom: 0.5rem;">2. Explicabilidade Primeiro</strong>
+      <p style="font-size: 0.9rem; margin: 0;">Nenhuma recomendação é "caixa preta". O usuário sempre vê os números (Valor vs Limiar), os bastidores e o contexto que levaram à decisão. A IA atua como um analista sênior, não como um oráculo.</p>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

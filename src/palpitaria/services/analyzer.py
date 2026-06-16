@@ -83,6 +83,7 @@ class FixtureAnalysis:
     match_context: dict | None = None  # Clima, Árbitro, Gramado
     home_stats_meta: dict | None = None  # Perfil híbrido (API + web) — mandante
     away_stats_meta: dict | None = None  # Perfil híbrido (API + web) — visitante
+    criteria_brief: dict | None = None  # Resumo gerencial dos achados numéricos
     venue_stadium: str | None = None
     venue_city: str | None = None
     venue_state: str | None = None
@@ -175,6 +176,7 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
         analysis.exclusion_reasons.append(
             "Perfil estatístico incompleto — rode passo 3 (Gerar Leituras) para coletar histórico via web"
         )
+        _attach_criteria_brief(analysis)
         return analysis
 
     if home_profile.matches_sampled < 1 or away_profile.matches_sampled < 1:
@@ -182,6 +184,7 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
         analysis.exclusion_reasons.append(
             f"Amostra insuficiente ({home_profile.matches_sampled}/{away_profile.matches_sampled} jogos)"
         )
+        _attach_criteria_brief(analysis, home_profile, away_profile)
         return analysis
 
     combined_avg = (
@@ -283,6 +286,8 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
     if away_profile.insights_json:
         analysis.away_insights = json.loads(away_profile.insights_json)
 
+    analysis.criteria_brief = build_criteria_brief(analysis)
+
     return analysis
 
 
@@ -302,10 +307,159 @@ def _profile_stats_meta(profile) -> dict:
     if profile.raw_json:
         try:
             raw = json.loads(profile.raw_json)
-            meta.update({k: v for k, v in raw.items() if k not in meta or k in ("source", "api_matches", "web_matches", "confidence", "sources_summary")})
+            meta.update({
+                k: v
+                for k, v in raw.items()
+                if k not in meta
+                or k in (
+                    "source",
+                    "api_matches",
+                    "web_matches",
+                    "confidence",
+                    "sources_summary",
+                    "recent_matches",
+                    "calc_matches",
+                )
+            })
         except json.JSONDecodeError:
             pass
     return meta
+
+
+def _fmt_num(value: float) -> str:
+    rounded = round(float(value), 1)
+    if rounded == int(rounded):
+        return str(int(rounded))
+    return f"{rounded:.1f}"
+
+
+def _fmt_pct(value: float) -> str:
+    return f"{float(value):.0%}"
+
+
+def _profile_source_label(meta: dict) -> str:
+    n = int(meta.get("matches_sampled") or 0)
+    src = meta.get("source") or "api"
+    kind = "web" if src == "web_research" else "API"
+    games = "jogo" if n == 1 else "jogos"
+    return f"{n} {games} ({kind})"
+
+
+def _team_form_block(meta: dict, team_label: str) -> dict:
+    recent = meta.get("recent_matches") or []
+    calc = meta.get("calc_matches") or []
+    sampled = int(meta.get("matches_sampled") or 0)
+
+    if not recent and not calc:
+        return {
+            "team": team_label,
+            "recent": ["Sem jogos salvos — rode «Gerar Leituras»."],
+            "calc_note": None,
+        }
+
+    recent_lines = [m.get("line") or m.get("result", "—") for m in recent[:3]]
+    calc_note = None
+    if sampled > len(recent):
+        calc_note = f"Médias calculadas com {sampled} jogos no total."
+    elif calc and len(calc) <= 5:
+        calc_note = "Base do cálculo:"
+        calc_lines = [m.get("line") or m.get("result", "—") for m in calc]
+        return {
+            "team": team_label,
+            "recent": recent_lines,
+            "calc_note": calc_note,
+            "calc_lines": calc_lines,
+        }
+
+    return {"team": team_label, "recent": recent_lines, "calc_note": calc_note}
+
+
+def build_criteria_brief(analysis: FixtureAnalysis) -> dict:
+    """Resumo curto e gerencial: de onde vieram os valores da tabela de critérios."""
+    home = analysis.home_stats_meta
+    away = analysis.away_stats_meta
+    match = f"{analysis.home_name} x {analysis.away_name}"
+
+    if not home or not away:
+        return {
+            "match": match,
+            "base": "Base estatística indisponível.",
+            "lines": ["Rode «Gerar Leituras» para montar perfis API + web das seleções."],
+            "verdict": "Sem achados para cruzar com os limiares.",
+        }
+
+    hn, an = analysis.home_name, analysis.away_name
+    combined = (
+        float(home["avg_goals_scored"])
+        + float(home["avg_goals_conceded"])
+        + float(away["avg_goals_scored"])
+        + float(away["avg_goals_conceded"])
+    ) / 2
+    worst_00 = max(float(home["zero_zero_rate"]), float(away["zero_zero_rate"]))
+    min_o05 = min(float(home["over_05_rate"]), float(away["over_05_rate"]))
+    avg_btts = (float(home["both_teams_score_rate"]) + float(away["both_teams_score_rate"])) / 2
+
+    lines = [
+        (
+            f"Média combinada {_fmt_num(combined)} g/j — "
+            f"{hn} {_fmt_num(home['avg_goals_scored'])} mar / {_fmt_num(home['avg_goals_conceded'])} lev · "
+            f"{an} {_fmt_num(away['avg_goals_scored'])} mar / {_fmt_num(away['avg_goals_conceded'])} lev"
+        ),
+        (
+            f"0-0 — {_fmt_pct(home['zero_zero_rate'])} ({hn}) · {_fmt_pct(away['zero_zero_rate'])} ({an}) "
+            f"→ pior {_fmt_pct(worst_00)}"
+        ),
+        (
+            f"Over 0,5 — {_fmt_pct(home['over_05_rate'])} ({hn}) · {_fmt_pct(away['over_05_rate'])} ({an}) "
+            f"→ menor {_fmt_pct(min_o05)}"
+        ),
+        (
+            f"Ambas marcam — {_fmt_pct(home['both_teams_score_rate'])} ({hn}) · "
+            f"{_fmt_pct(away['both_teams_score_rate'])} ({an}) → média {_fmt_pct(avg_btts)}"
+        ),
+        f"Ofensiva {hn}: {_fmt_num(home['avg_goals_scored'])} g/j · {_profile_source_label(home)}",
+        f"Ofensiva {an}: {_fmt_num(away['avg_goals_scored'])} g/j · {_profile_source_label(away)}",
+    ]
+
+    total = len(analysis.criteria)
+    passed = sum(1 for c in analysis.criteria if c.passed)
+    strong = analysis.strong_criteria_count
+    failed = [c.detail for c in analysis.criteria if not c.passed]
+
+    if not total:
+        verdict = "Critérios ainda não calculados."
+    elif failed:
+        verdict = f"{passed}/{total} OK · {strong} ótimos · gap: {failed[0]}"
+        if len(failed) > 1:
+            verdict = f"{passed}/{total} OK · {strong} ótimos · {len(failed)} gap(s)"
+    else:
+        verdict = f"{passed}/{total} OK · {strong} ótimos — passou no filtro Over"
+
+    home_insights = (analysis.home_insights or {}).get("key_insights") or []
+    away_insights = (analysis.away_insights or {}).get("key_insights") or []
+
+    return {
+        "match": match,
+        "base": f"Base: {_profile_source_label(home)} | {_profile_source_label(away)}",
+        "lines": lines,
+        "verdict": verdict,
+        "home_form": _team_form_block(home, hn),
+        "away_form": _team_form_block(away, an),
+        "home_highlights": home_insights[:3],
+        "away_highlights": away_insights[:3],
+    }
+
+
+def _attach_criteria_brief(
+    analysis: FixtureAnalysis,
+    home_profile=None,
+    away_profile=None,
+) -> None:
+    if home_profile is not None:
+        analysis.home_stats_meta = _profile_stats_meta(home_profile)
+    if away_profile is not None:
+        analysis.away_stats_meta = _profile_stats_meta(away_profile)
+    analysis.criteria_brief = build_criteria_brief(analysis)
 
 
 def profile_from_meta(meta: dict | None):

@@ -43,9 +43,12 @@
     <p style="color: var(--muted); font-size: 0.9rem;">{{ b.description }}</p>
     <p style="font-size: 0.75rem; color: var(--muted); margin-top: -0.5rem;">Taxa de comissão: <strong>{{ b.commission_rate }}%</strong></p>
     
-    <div style="display: flex; gap: 1rem; margin: 1rem 0; font-size: 0.85rem;">
+    <div style="display: flex; gap: 1rem; margin: 1rem 0; font-size: 0.85rem; align-items: baseline; flex-wrap: wrap;">
       <span>✅ <strong>{{ stats[b.id].win_count }}</strong> Greens</span>
       <span>❌ <strong>{{ stats[b.id].loss_count }}</strong> Reds</span>
+      {% if stats[b.id].hit_rate_pct is not none %}
+      <span class="hit-rate-muted" title="Greens ÷ entradas do mês">{{ stats[b.id].win_count }}/{{ stats[b.id].bet_count }} · {{ stats[b.id].hit_rate_pct }}%</span>
+      {% endif %}
     </div>
 
     <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 1.5rem 0;">

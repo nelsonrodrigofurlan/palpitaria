@@ -193,6 +193,7 @@
     th { color: var(--muted); font-weight: 600; }
     .pass { color: var(--green); font-weight: 700; }
     .fail { color: var(--red); font-weight: 700; }
+    .hit-rate-muted { font-size: 0.72rem; color: var(--muted); font-weight: 500; }
     .crit-fail { color: var(--red); font-weight: 700; }
     .crit-ok { color: var(--green); font-weight: 700; }
     .crit-strong { color: #b45309; font-weight: 800; }
@@ -225,12 +226,87 @@
       background: var(--blue);
       color: white;
     }
+    .criteria-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 0.5rem;
+    }
+    .brief-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: #f8fafc;
+      color: var(--text);
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 0.25rem 0.6rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: none;
+    }
+    .brief-btn:hover {
+      background: #eff6ff;
+      border-color: #93c5fd;
+      color: var(--blue);
+    }
+    .brief-badge {
+      background: #1e40af;
+      color: #fff;
+      font-size: 0.6rem;
+      font-weight: 800;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      letter-spacing: 0.04em;
+    }
+    .brief-list {
+      margin: 0;
+      padding-left: 1rem;
+      font-size: 0.86rem;
+      line-height: 1.55;
+    }
+    .brief-list li { margin-bottom: 0.35rem; }
+    .brief-verdict {
+      margin: 1rem 0 0;
+      padding-top: 0.75rem;
+      border-top: 1px solid #e2e8f0;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .brief-base {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin: 0 0 0.85rem;
+    }
+    .brief-forms {
+      margin-top: 1rem;
+      padding-top: 0.85rem;
+      border-top: 1px dashed #e2e8f0;
+      display: grid;
+      gap: 0.85rem;
+    }
+    .brief-form-block strong {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--blue);
+      margin-bottom: 0.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .brief-calc-note {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin: 0.45rem 0 0.2rem;
+      font-weight: 600;
+    }
+    .brief-calc-list { font-size: 0.8rem; }
     /* Didactic Modal */
     .didactic-modal {
       position: fixed;
       top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      width: 90%; max-width: 500px;
+      width: 90%; max-width: 560px;
       background: white;
       border-radius: 24px;
       box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
@@ -570,6 +646,47 @@
       document.getElementById('didactic-modal').style.display = 'flex';
     }
 
+    function showCriteriaBrief(data) {
+      if (!data) return;
+      const items = (data.lines || []).map(function(line) {
+        return '<li>' + line + '</li>';
+      }).join('');
+
+      function formBlock(block, highlights) {
+        if (!block) return '';
+        const recent = (block.recent || []).map(function(line) {
+          return '<li>' + line + '</li>';
+        }).join('');
+        let calc = '';
+        if (block.calc_lines && block.calc_lines.length) {
+          calc = '<p class="brief-calc-note">' + block.calc_note + '</p><ul class="brief-list brief-calc-list">' +
+            block.calc_lines.map(function(line) { return '<li>' + line + '</li>'; }).join('') + '</ul>';
+        } else if (block.calc_note) {
+          calc = '<p class="brief-calc-note">' + block.calc_note + '</p>';
+        }
+        
+        let high = '';
+        if (highlights && highlights.length) {
+          high = '<p class="brief-calc-note">Destaques de bastidores:</p><ul class="brief-list brief-calc-list">' +
+            highlights.map(function(line) { return '<li>' + line + '</li>'; }).join('') + '</ul>';
+        }
+
+        return '<div class="brief-form-block"><strong>' + block.team + '</strong>' +
+          '<ul class="brief-list">' + recent + '</ul>' + calc + high + '</div>';
+      }
+
+      const forms = formBlock(data.home_form, data.home_highlights) + formBlock(data.away_form, data.away_highlights);
+
+      document.getElementById('didactic-title').textContent = 'Achados · ' + (data.match || '');
+      document.getElementById('didactic-content').innerHTML =
+        '<p class="brief-base">' + (data.base || '') + '</p>' +
+        '<ul class="brief-list">' + items + '</ul>' +
+        '<div class="brief-forms">' + forms + '</div>' +
+        '<p class="brief-verdict">' + (data.verdict || '') + '</p>';
+      document.getElementById('modal-overlay').style.display = 'block';
+      document.getElementById('didactic-modal').style.display = 'flex';
+    }
+
     function closeDidactic() {
       document.getElementById('didactic-modal').style.display = 'none';
       // Only hide overlay if terminal is not showing
@@ -630,6 +747,11 @@
         <li class="nav-item">
           <a href="/historico" class="{% if request.url.path.startswith('/historico') %}active{% endif %}">
             📅 Histórico
+          </a>
+        </li>
+        <li class="nav-item">
+          <a href="/sobre" class="{% if request.url.path.startswith('/sobre') %}active{% endif %}">
+            ℹ️ Sobre
           </a>
         </li>
       </ul>

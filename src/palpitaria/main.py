@@ -1,3 +1,4 @@
+import json
 from collections import deque
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -48,6 +49,13 @@ def compute_bet_pl(stake: float, odds: float, outcome: str, commission_rate: flo
         return -stake
     return 0.0
 
+
+def hit_rate_pct(wins: int, total: int) -> int | None:
+    """% de acerto no mês: greens ÷ total de entradas."""
+    if total <= 0:
+        return None
+    return round(wins / total * 100)
+
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 
@@ -57,6 +65,7 @@ def _format_kickoff(utc_naive: datetime, tz_name: str) -> str:
 
 
 TEMPLATES.env.filters["kickoff"] = _format_kickoff
+TEMPLATES.env.filters["tojson"] = lambda obj: json.dumps(obj, ensure_ascii=False)
 
 app = FastAPI(title="Palpitaria FC", description="Leitura fundamentada para mercados de gols")
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
@@ -310,10 +319,15 @@ def list_branches(request: Request, db: Session = Depends(get_db)):
         total_pl = db.query(func.sum(Bet.profit_loss)).filter(Bet.branch_id == b.id).scalar() or 0.0
         win_count = db.query(Bet).filter(Bet.branch_id == b.id, Bet.outcome == "WIN").count()
         loss_count = db.query(Bet).filter(Bet.branch_id == b.id, Bet.outcome == "LOSS").count()
+        bet_count = win_count + loss_count + db.query(Bet).filter(
+            Bet.branch_id == b.id, Bet.outcome == "PENDING"
+        ).count()
         stats[b.id] = {
             "total_pl": round(total_pl, 2),
             "win_count": win_count,
             "loss_count": loss_count,
+            "bet_count": bet_count,
+            "hit_rate_pct": hit_rate_pct(win_count, bet_count),
             "bets": db.query(Bet).filter(Bet.branch_id == b.id).order_by(Bet.created_at.desc()).limit(10).all()
         }
 
@@ -358,6 +372,7 @@ def list_historico(request: Request, db: Session = Depends(get_db)):
                 "pending_count": s.pending_count,
                 "total_stake": s.total_stake,
                 "total_pl": s.total_pl,
+                "hit_rate_pct": hit_rate_pct(s.win_count, s.bet_count),
                 "closed_at": s.closed_at,
             }
         )
@@ -367,6 +382,19 @@ def list_historico(request: Request, db: Session = Depends(get_db)):
         "historico.html",
         {
             "rows": rows,
+            "current_period": period_label(cy, cm),
+            "app_timezone": settings.app_timezone,
+        }
+    )
+
+
+@app.get("/sobre", response_class=HTMLResponse)
+def about_page(request: Request):
+    cy, cm = current_period()
+    return TEMPLATES.TemplateResponse(
+        request,
+        "sobre.html",
+        {
             "current_period": period_label(cy, cm),
             "app_timezone": settings.app_timezone,
         }

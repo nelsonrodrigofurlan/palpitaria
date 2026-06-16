@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from palpitaria.models import Team, Fixture, TeamProfile
-from palpitaria.services.analyzer import analyze_fixture, get_today_context
+from palpitaria.services.analyzer import analyze_fixture, build_criteria_brief, get_today_context
 
 def test_analyze_fixture_excluded_no_profile(db_session):
     # Setup
@@ -140,6 +140,58 @@ def test_analyze_fixture_excluded_still_has_alternate_pick(db_session):
     assert home_off.level == "strong"
     btts = next(c for c in analysis.criteria if c.name == "both_teams_score_rate")
     assert btts.level == "fail"
+
+
+def test_criteria_brief_argentina_algeria_shape(db_session):
+    home = Team(external_id=10, name="Argentina")
+    away = Team(external_id=11, name="Argélia")
+    db_session.add_all([home, away])
+    db_session.flush()
+
+    db_session.add_all([
+        TeamProfile(
+            team_id=home.id,
+            matches_sampled=1,
+            avg_goals_scored=2.0,
+            avg_goals_conceded=0.0,
+            zero_zero_rate=0.0,
+            over_05_rate=1.0,
+            both_teams_score_rate=0.0,
+            raw_json='{"source": "web_research", "recent_matches": [{"line": "10/06/26 — Argentina 2×0 Colômbia (2 mar, 0 lev)"}], "calc_matches": [{"line": "10/06/26 — Argentina 2×0 Colômbia (2 mar, 0 lev)"}]}',
+        ),
+        TeamProfile(
+            team_id=away.id,
+            matches_sampled=1,
+            avg_goals_scored=3.0,
+            avg_goals_conceded=0.0,
+            zero_zero_rate=0.0,
+            over_05_rate=1.0,
+            both_teams_score_rate=0.0,
+            raw_json='{"source": "web_research"}',
+        ),
+    ])
+    fixture = Fixture(
+        external_id=110,
+        competition_code="WC",
+        season=2026,
+        utc_date=datetime.utcnow(),
+        home_team_id=home.id,
+        away_team_id=away.id,
+    )
+    db_session.add(fixture)
+    db_session.commit()
+
+    analysis = analyze_fixture(db_session, fixture)
+    brief = analysis.criteria_brief
+
+    assert brief is not None
+    assert "Argentina x Argélia" in brief["match"]
+    assert len(brief["lines"]) == 6
+    assert "2.5 g/j" in brief["lines"][0]
+    assert "0%" in brief["lines"][3]
+    assert "gap" in brief["verdict"]
+    assert brief["home_form"]["recent"][0].startswith("10/06")
+
 
 def test_today_context_logic():
     ctx = get_today_context("America/Sao_Paulo")

@@ -20,7 +20,8 @@ from palpitaria.services.ingest import (
 )
 from palpitaria.services.llm_client import chat_completion
 from palpitaria.services.scraper import _parse_json_from_llm, search_web_stalking
-from palpitaria.services.team_names import english_team_name, names_for_matching
+from palpitaria.services.profile_matches import build_matches_snapshot
+from palpitaria.services.team_names import names_for_matching
 from palpitaria.services.wc_stalking_queries import team_results_queries
 
 TEAM_RESULTS_SYSTEM = """Você extrai resultados REAIS de jogos de seleções a partir de snippets da web.
@@ -88,6 +89,7 @@ def _web_match_to_api_shape(entry: dict) -> dict | None:
         "homeTeam": {"id": 0, "name": home_team},
         "awayTeam": {"id": 1, "name": away_team},
         "score": {"fullTime": {"home": home_i, "away": away_i}},
+        **({"date": str(entry.get("date")).strip()} if entry.get("date") else {}),
     }
 
 
@@ -312,6 +314,10 @@ def build_web_team_profile(
     stats["web_matches"] = len(web_matches)
     stats["confidence"] = extraction.get("confidence", 0)
     stats["sources_summary"] = extraction.get("sources_summary", "")
+    stats["recent_matches"] = build_matches_snapshot(combined, team.name, team.external_id, limit=3)
+    stats["calc_matches"] = build_matches_snapshot(
+        combined, team.name, team.external_id, limit=max(stats.get("matches_sampled", 0), 3)
+    )
 
     if stats["matches_sampled"] < settings.wc_web_profile_min_matches:
         log(

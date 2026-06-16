@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from palpitaria.config import settings
 from palpitaria.models import Fixture, Team, TeamProfile
 from palpitaria.services.football_data_client import FootballDataClient
+from palpitaria.services.profile_matches import build_matches_snapshot
 from palpitaria.services.team_names import localize_team_name
 from palpitaria.services.venues import apply_venue
 
@@ -184,6 +185,10 @@ def build_team_profiles(
 
         stats["source"] = "api"
         stats["api_matches"] = stats["matches_sampled"]
+        stats["recent_matches"] = build_matches_snapshot(matches, team.name, team.external_id, limit=3)
+        stats["calc_matches"] = build_matches_snapshot(
+            matches, team.name, team.external_id, limit=max(stats["matches_sampled"], 3)
+        )
         save_team_profile(db, team.id, stats, computed_at=now, preserve_insights=True)
         updated += 1
         log(f"  -> Perfil salvo: media {stats['avg_goals_scored']} gols/jogo")

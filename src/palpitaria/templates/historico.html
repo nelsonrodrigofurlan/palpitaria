@@ -35,7 +35,12 @@
         <td><strong>{{ row.period }}</strong></td>
         <td>{{ row.branch_name }}</td>
         <td>{{ row.bet_count }}</td>
-        <td class="pass">{{ row.win_count }}</td>
+        <td class="pass">
+          {{ row.win_count }}
+          {% if row.hit_rate_pct is not none %}
+          <span class="hit-rate-muted">· {{ row.hit_rate_pct }}%</span>
+          {% endif %}
+        </td>
         <td class="fail">{{ row.loss_count }}</td>
         <td>{{ row.pending_count }}</td>
         <td>{{ "%.2f"|format(row.total_stake) }}</td>
