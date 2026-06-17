@@ -4,7 +4,7 @@
 <header style="margin-bottom: 2rem;">
   <div style="display: flex; justify-content: space-between; align-items: flex-start;">
     <div>
-      <p class="sub" style="font-size: 1.1rem; font-weight: 600; color: var(--blue); margin-bottom: 0.25rem;">Análise preditiva · jogos de hoje</p>
+      <p class="sub" style="font-size: 1.1rem; font-weight: 600; color: var(--blue); margin-bottom: 0.25rem;">Palpites e análises opinativas · jogos de hoje</p>
       <h1 style="font-size: 1.5rem; margin: 0;">Olá, {{ request.session.get('user_email').split('@')[0] }}! ⚽</h1>
     </div>
     <div style="display: flex; align-items: center; gap: 1rem; background: white; padding: 0.5rem 1rem; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: var(--shadow);">
@@ -17,6 +17,11 @@
     </div>
   </div>
 </header>
+
+<div class="legal-strip" role="note">
+  ⚖️ <strong>Palpites opinativos</strong> — não somos casa de apostas. Cada entrada é decisão sua; o sistema não garante resultado nem se responsabiliza por perdas.
+  <a href="/legal/aviso-legal">Aviso legal</a>
+</div>
 
 {% if not has_token %}
 <div class="alert">

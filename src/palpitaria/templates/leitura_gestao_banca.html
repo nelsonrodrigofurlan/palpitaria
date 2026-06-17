@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Gestão de banca — Palpitaria FC{% endblock %}
+{% block content %}
+<header style="margin-bottom: 2rem;">
+  <p style="font-size: 0.75rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 0.5rem;">Orientações</p>
+  <h1>💰 Controle e gestão de banca</h1>
+  <p class="sub">Boa leitura ajuda; quem segura a banca é você.</p>
+</header>
+
+<div class="card" style="border-left: 4px solid var(--blue);">
+  <p style="font-size: 1.05rem; line-height: 1.7; margin: 0;">
+    O Palpitaria FC cruza dados, mostra os números e explica o raciocínio — para você decidir com mais clareza.
+    Por isso usamos filtros, cenários e histórico rastreável: a ideia é <strong>opinar com base</strong>, não prometer o futuro.
+    Mesmo assim, <strong>nenhuma ferramenta substitui a disciplina de quem aposta</strong>.
+    O ponto delicado costuma vir depois da análise: quando a gente trata palpite como certeza, aumenta stake no impulso ou abandona o plano.
+    A gestão de banca é o que mantém o processo firme — independentemente do resultado do jogo.
+  </p>
+</div>
+
+<div class="card">
+  <h2>🧠 Quando o feeling fala mais alto</h2>
+  <p style="margin-bottom: 1.25rem;">Não é falha do sistema — é comportamento comum depois de uma boa leitura:</p>
+  <div style="display: grid; gap: 1rem;">
+    <div style="padding: 1rem 1.25rem; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+      <strong style="color: var(--blue);">“Essa é certa.”</strong>
+      <p style="font-size: 0.9rem; margin: 0.5rem 0 0;">Probabilidade alta não é garantia. Um jogo bem filtrado ainda pode terminar 0-0.</p>
+    </div>
+    <div style="padding: 1rem 1.25rem; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+      <strong style="color: var(--blue);">“Preciso recuperar.”</strong>
+      <p style="font-size: 0.9rem; margin: 0.5rem 0 0;">Dobrar stake depois de um red não corrige análise — só acelera o prejuízo.</p>
+    </div>
+    <div style="padding: 1rem 1.25rem; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+      <strong style="color: var(--blue);">“Só mais essa.”</strong>
+      <p style="font-size: 0.9rem; margin: 0.5rem 0 0;">Entrar em tudo que a IA lista, ignorar filiais e não registrar aposta é apostar na memória — e memória distorce.</p>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>📐 Gestão de banca em 5 regras</h2>
+  <p style="margin-bottom: 1.25rem;">Leve, objetiva, sem fórmula mágica:</p>
+  <ol style="margin: 0; padding-left: 1.25rem; display: grid; gap: 1rem; font-size: 0.95rem; line-height: 1.6;">
+    <li>
+      <strong>Banca separada.</strong> Use só dinheiro que perder não mexe na sua vida. Conta, bolso e cabeça separados.
+    </li>
+    <li>
+      <strong>Unidade fixa.</strong> Defina um valor por entrada (ex.: 1 u = 2% da banca) e não mude no calor do jogo.
+    </li>
+    <li>
+      <strong>Teto diário.</strong> Limite quantas unidades pode arriscar por dia. Acabou o teto, acabou o dia — mesmo com “oportunidade imperdível”.
+    </li>
+    <li>
+      <strong>Registre tudo nas Filiais.</strong> O P&L real não mente. O que não está lançado não existe para a gestão.
+    </li>
+    <li>
+      <strong>Confie no histórico, não no feeling.</strong> Use o <a href="/ia-historico">Histórico IA</a> e o <a href="/historico">Histórico P&L</a> para calibrar expectativa — não um bilhete que “quase bateu”.
+    </li>
+  </ol>
+</div>
+
+<div class="card" style="background: #f0fdf4; border-color: #bbf7d0;">
+  <h2 style="color: var(--green); margin-top: 0;">✅ O que o sistema faz por você</h2>
+  <ul style="margin: 0; padding-left: 1.25rem; font-size: 0.95rem; line-height: 1.7;">
+    <li>Filtra jogos com risco de zero gols antes de sugerir Over.</li>
+    <li>Mostra cenários e explicação — não um oráculo de uma linha só.</li>
+    <li>Separa homologadas (candidatas) de alternativas (referência).</li>
+    <li>Rastreia acerto da IA e resultado real nas filiais.</li>
+  </ul>
+  <p style="margin: 1.25rem 0 0; font-size: 0.9rem; color: #166534;">
+    <strong>O que o sistema não faz:</strong> decidir o tamanho da sua aposta, impedir você de entrar fora do plano ou impedir a alucinação de “agora vai”.
+    Isso é gestão de banca — e é 100% sua responsabilidade.
+  </p>
+</div>
+
+<div class="card" style="text-align: center; padding: 1.5rem;">
+  <p style="font-size: 1rem; font-weight: 700; color: var(--blue); margin: 0 0 0.5rem;">
+    Análise boa sem banca disciplinada é só entretenimento caro.
+  </p>
+  <p style="font-size: 0.85rem; color: var(--muted); margin: 0 0 0.75rem;">
+    Leia isso antes de cada rodada. Sério.
+  </p>
+  <a href="/legal/aviso-legal" style="font-size: 0.8rem; font-weight: 700; color: var(--blue);">Aviso legal — palpites opinativos, sem garantia de resultado</a>
+</div>
+{% endblock %}

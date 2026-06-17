@@ -197,13 +197,26 @@ def login_page(request: Request):
 
 
 @app.post("/login", response_class=HTMLResponse)
-async def login(request: Request, email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+async def login(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    accept_terms: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    if accept_terms != "on":
+        return TEMPLATES.TemplateResponse(
+            request,
+            "login.html",
+            {"error": "É necessário aceitar o Aviso Legal e declarar ser maior de 18 anos."},
+        )
     user = get_user_by_email(db, email)
     if not user or not verify_password(password, user.hashed_password):
         return TEMPLATES.TemplateResponse(request, "login.html", {"error": "E-mail ou senha inválidos."})
-    
+
     request.session["user_id"] = user.id
     request.session["user_email"] = user.email
+    request.session["terms_accepted"] = True
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -600,6 +613,32 @@ def about_page(request: Request, user=Depends(login_required)):
             "current_period": period_label(cy, cm),
             "app_timezone": settings.app_timezone,
         }
+    )
+
+
+@app.get("/leitura/gestao-de-banca", response_class=HTMLResponse)
+def leitura_gestao_banca(request: Request, user=Depends(login_required)):
+    cy, cm = current_period()
+    return TEMPLATES.TemplateResponse(
+        request,
+        "leitura_gestao_banca.html",
+        {
+            "current_period": period_label(cy, cm),
+            "app_timezone": settings.app_timezone,
+        },
+    )
+
+
+@app.get("/legal/aviso-legal", response_class=HTMLResponse)
+def aviso_legal_page(request: Request):
+    cy, cm = current_period()
+    return TEMPLATES.TemplateResponse(
+        request,
+        "aviso_legal.html",
+        {
+            "current_period": period_label(cy, cm),
+            "app_timezone": settings.app_timezone,
+        },
     )
 
 
