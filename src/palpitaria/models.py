@@ -88,6 +88,30 @@ class FixtureReport(Base):
     fixture: Mapped["Fixture"] = relationship(back_populates="report")
 
 
+class AiRecommendation(Base):
+    """Snapshot imutável da recomendação da IA — resolvido após o jogo terminar."""
+
+    __tablename__ = "ai_recommendations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id"), index=True)
+    competition_code: Mapped[str] = mapped_column(String(10), index=True)
+    match_label: Mapped[str] = mapped_column(String(200))  # ex: Portugal x RD Congo
+    analyzed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    market: Mapped[str] = mapped_column(String(80))
+    verdict: Mapped[str] = mapped_column(String(20), default="CANDIDATE")
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scope: Mapped[str] = mapped_column(String(20), default="goals")  # goals | alternate
+    excluded: Mapped[bool] = mapped_column(default=False)
+    goal_potential_score: Mapped[float] = mapped_column(Float, default=0.0)
+    outcome: Mapped[str] = mapped_column(String(10), default="PENDING")  # PENDING, HIT, MISS, VOID
+    final_home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    final_away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    fixture: Mapped["Fixture"] = relationship()
+
+
 class TeamProfile(Base):
     __tablename__ = "team_profiles"
     __table_args__ = (UniqueConstraint("team_id", "computed_at", name="uq_team_profile_date"),)

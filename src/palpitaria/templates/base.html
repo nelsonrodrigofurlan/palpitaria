@@ -775,8 +775,13 @@
           </a>
         </li>
         <li class="nav-item">
-          <a href="/historico" class="{% if request.url.path.startswith('/historico') %}active{% endif %}">
-            📅 Histórico
+          <a href="/historico" class="{% if request.url.path.startswith('/historico') and not request.url.path.startswith('/ia-historico') %}active{% endif %}">
+            📅 Histórico P&L
+          </a>
+        </li>
+        <li class="nav-item">
+          <a href="/ia-historico" class="{% if request.url.path.startswith('/ia-historico') %}active{% endif %}">
+            🤖 Histórico IA
           </a>
         </li>
         <li class="nav-item">

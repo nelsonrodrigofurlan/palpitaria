@@ -93,7 +93,7 @@ def main() -> None:
             analysis.best_pick = refine_best_pick(analysis)
             explanation = explain_analysis(analysis)
             analysis.llm_explanation = explanation
-            persist_analysis(db, analysis, explanation)
+            persist_analysis(db, analysis, explanation, competition_code=settings.world_cup_code)
 
             if analysis.excluded:
                 log(f"  DESCARTADO: {'; '.join(analysis.exclusion_reasons)}")

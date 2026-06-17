@@ -95,7 +95,7 @@
       <div class="card-content" style="margin-top: 1.5rem;">
         {% if a.llm_explanation %}
         <div class="llm-box">
-          {{ a.llm_explanation | safe }}
+          {{ a.llm_explanation }}
         </div>
         {% endif %}
 
@@ -215,7 +215,7 @@
 
       {% if a.llm_explanation %}
       <div class="llm-box" style="background:#fef2f2;border-color:#fecaca;color:#991b1b;font-style:normal;">
-        {{ a.llm_explanation | safe }}
+        {{ a.llm_explanation }}
       </div>
       {% endif %}
 

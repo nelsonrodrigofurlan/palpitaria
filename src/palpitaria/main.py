@@ -32,6 +32,13 @@ from palpitaria.services.ingest import build_team_profiles, ingest_competition, 
 from palpitaria.services.scraper import enrich_fixture_analysis
 from palpitaria.services.wc_profile_web import enrich_today_team_profiles
 from palpitaria.services.chat_service import process_user_message
+from palpitaria.services.ai_tracker import (
+    backfill_from_fixture_reports,
+    compute_accuracy_stats,
+    group_recommendations_by_month,
+    monthly_summary_rows,
+    resolve_pending_recommendations,
+)
 from palpitaria.services.ledger import bet_competition_expr, close_past_months, current_period, period_label
 from palpitaria.models import Fixture
 
@@ -111,6 +118,12 @@ def on_startup() -> None:
             closed = close_past_months(db)
             if closed:
                 print(f"Ledger: {len(closed)} fechamento(s) mensal(is) consolidado(s).", flush=True)
+            backfilled = backfill_from_fixture_reports(db)
+            if backfilled:
+                print(f"IA tracker: {backfilled} recomendação(ões) importadas.", flush=True)
+            resolved = resolve_pending_recommendations(db)
+            if resolved:
+                print(f"IA tracker: {resolved} recomendação(ões) resolvidas.", flush=True)
         finally:
             db.close()
     except Exception as exc:
@@ -219,6 +232,9 @@ def sync_data(request: Request, comp: str | None = None, db: Session = Depends(g
         if renamed:
             add_log(f"Nomes padronizados PT-BR: {renamed} seleções")
         add_log(f"Concluído: {ingest_result.get('fixtures', 0)} jogos, {ingest_result.get('teams', 0)} seleções.")
+        resolved = resolve_pending_recommendations(db, comp_code)
+        if resolved:
+            add_log(f"IA: {resolved} recomendação(ões) conferidas com placar final.")
     except FootballDataError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
@@ -371,7 +387,7 @@ def run_analysis(request: Request, comp: str | None = None, db: Session = Depend
         analysis.best_pick = refine_best_pick(analysis)
         explanation = explain_analysis(analysis)
         analysis.llm_explanation = explanation
-        persist_analysis(db, analysis, explanation)
+        persist_analysis(db, analysis, explanation, competition_code=comp_code)
         explained += 1
         if not analysis.excluded:
             candidates += 1
@@ -518,6 +534,53 @@ def list_historico(request: Request, comp: str | None = None, db: Session = Depe
             "active_comps": active_comps,
             "current_comp": comp_code,
         }
+    )
+
+
+@app.get("/ia-historico", response_class=HTMLResponse)
+def list_ia_historico(request: Request, comp: str | None = None, db: Session = Depends(get_db), user=Depends(login_required)):
+    from palpitaria.models import AiRecommendation, Competition
+
+    resolve_pending_recommendations(db, comp)
+
+    active_comps = db.query(Competition).filter_by(is_active=True).all()
+    comp_code = comp or (active_comps[0].code if active_comps else "WC")
+
+    query = db.query(AiRecommendation).order_by(AiRecommendation.analyzed_at.desc())
+    if comp_code:
+        query = query.filter(AiRecommendation.competition_code == comp_code)
+    recommendations = query.limit(200).all()
+
+    stats = compute_accuracy_stats(recommendations)
+    month_blocks = group_recommendations_by_month(recommendations)
+    summary_months = monthly_summary_rows(recommendations)
+
+    market_rows = []
+    for market, data in sorted(stats["by_market"].items(), key=lambda x: -x[1]["total"]):
+        market_rows.append(
+            {
+                "market": market,
+                "hit": data["hit"],
+                "miss": data["miss"],
+                "total": data["total"],
+                "hit_rate_pct": round(data["hit"] / data["total"] * 100) if data["total"] else None,
+            }
+        )
+
+    cy, cm = current_period()
+    return TEMPLATES.TemplateResponse(
+        request,
+        "ia_historico.html",
+        {
+            "stats": stats,
+            "market_rows": market_rows,
+            "summary_months": summary_months,
+            "month_blocks": month_blocks,
+            "current_period": period_label(cy, cm),
+            "app_timezone": settings.app_timezone,
+            "active_comps": active_comps,
+            "current_comp": comp_code,
+        },
     )
 
 

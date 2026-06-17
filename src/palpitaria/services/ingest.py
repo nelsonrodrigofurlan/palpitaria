@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -124,6 +125,14 @@ def ingest_competition(
     return result
 
 
+def profile_updated_today(profile: TeamProfile, tz_name: str | None = None) -> bool:
+    """Perfil API considerado fresco só no dia do jogo (timezone do app)."""
+    tz = ZoneInfo(tz_name or settings.app_timezone)
+    computed = profile.computed_at.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
+    now = datetime.now(tz)
+    return (computed.year, computed.month, computed.day) == (now.year, now.month, now.day)
+
+
 def build_team_profiles(
     db: Session,
     client: FootballDataClient | None = None,
@@ -164,7 +173,13 @@ def build_team_profiles(
     api_calls = 0
     for team in teams:
         existing = latest_profile(db, team.id)
-        if existing and existing.matches_sampled >= 1:
+        if today_only:
+            if existing and existing.matches_sampled >= 1 and profile_updated_today(existing):
+                log(f"Skip {team.name} (perfil API já atualizado hoje)")
+                continue
+            if existing and existing.matches_sampled >= 1:
+                log(f"Atualizando {team.name} (novo dia de jogo — refresh API)...")
+        elif existing and existing.matches_sampled >= 1:
             log(f"Skip {team.name} (perfil já existe)")
             continue
 

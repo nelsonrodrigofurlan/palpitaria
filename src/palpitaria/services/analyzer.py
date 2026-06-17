@@ -710,8 +710,15 @@ def analyze_upcoming(
     return [analyze_fixture(db, fixture) for fixture in fixtures]
 
 
-def persist_analysis(db: Session, analysis: FixtureAnalysis, llm_explanation: str | None = None) -> None:
-    from palpitaria.models import FixtureReport
+def persist_analysis(
+    db: Session,
+    analysis: FixtureAnalysis,
+    llm_explanation: str | None = None,
+    *,
+    competition_code: str | None = None,
+) -> None:
+    from palpitaria.models import Fixture, FixtureReport
+    from palpitaria.services.ai_tracker import record_ai_recommendation
 
     explanation = llm_explanation or analysis.llm_explanation
     report = db.query(FixtureReport).filter_by(fixture_id=analysis.fixture_id).one_or_none()
@@ -730,6 +737,12 @@ def persist_analysis(db: Session, analysis: FixtureAnalysis, llm_explanation: st
     )
     report.analyzed_at = datetime.utcnow()
 
+    code = competition_code
+    if not code:
+        fixture = db.query(Fixture).filter_by(id=analysis.fixture_id).one_or_none()
+        code = fixture.competition_code if fixture else settings.world_cup_code
+
+    record_ai_recommendation(db, analysis, competition_code=code)
     db.commit()
 
 

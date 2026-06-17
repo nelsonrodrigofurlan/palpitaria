@@ -101,3 +101,64 @@ def test_build_team_profiles_skips_teams_not_playing_today(db_session):
 
     assert updated == 0
     mock_client.get_team_matches.assert_not_called()
+
+
+def test_build_team_profiles_refreshes_stale_profile_on_new_day(db_session):
+    """Perfil de dias atrás deve ser atualizado no dia do jogo — não é cache vitalício."""
+    from datetime import timedelta
+
+    home = Team(external_id=10, name="Brasil")
+    away = Team(external_id=11, name="Teste")
+    db_session.add_all([home, away])
+    db_session.flush()
+
+    ctx = get_today_context()
+    kickoff = ctx.start_utc.replace(hour=20, minute=0)
+    db_session.add(
+        Fixture(
+            external_id=2001,
+            competition_code="WC",
+            season=2026,
+            utc_date=kickoff,
+            home_team_id=home.id,
+            away_team_id=away.id,
+            status="TIMED",
+        )
+    )
+    db_session.add(
+        TeamProfile(
+            team_id=home.id,
+            computed_at=datetime.utcnow() - timedelta(days=3),
+            matches_sampled=5,
+            avg_goals_scored=1.5,
+            avg_goals_conceded=0.8,
+            zero_zero_rate=0.1,
+            over_05_rate=0.9,
+            over_15_rate=0.7,
+            over_25_rate=0.4,
+            win_rate=0.6,
+            both_teams_score_rate=0.5,
+        )
+    )
+    db_session.commit()
+
+    mock_client = MagicMock()
+    mock_client.get_team_matches.return_value = [
+        {
+            "homeTeam": {"id": 10},
+            "awayTeam": {"id": 12},
+            "score": {"fullTime": {"home": 2, "away": 1}},
+        },
+    ]
+
+    updated = build_team_profiles(db_session, client=mock_client, today_only=True)
+
+    assert updated == 2
+    mock_client.get_team_matches.assert_called()
+    profiles = (
+        db_session.query(TeamProfile)
+        .filter_by(team_id=home.id)
+        .order_by(TeamProfile.computed_at.desc())
+        .all()
+    )
+    assert len(profiles) == 2
