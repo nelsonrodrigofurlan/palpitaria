@@ -31,13 +31,13 @@
 
 <div class="actions">
   {% if request.session.get('user_email') == 'nelson.r.furlan@gmail.com' %}
-    <form hx-post="/sync?comp={{ current_comp }}" hx-target="#sync-result" hx-swap="innerHTML">
+    <form hx-post="/sync?comp={{ current_comp }}" data-pipeline="/sync" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="300000">
       <button type="submit" data-loading="sync">1. Sincronizar Jogos</button>
     </form>
-    <form hx-post="/sync-profiles?comp={{ current_comp }}" hx-target="#sync-result" hx-swap="innerHTML">
+    <form hx-post="/sync-profiles?comp={{ current_comp }}" data-pipeline="/sync-profiles" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="600000">
       <button type="submit" class="secondary" data-loading="profiles">2. Atualizar Perfis (seleções de hoje)</button>
     </form>
-    <form hx-post="/analyze?comp={{ current_comp }}" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="600000">
+    <form hx-post="/analyze?comp={{ current_comp }}" data-pipeline="/analyze" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="600000">
       <button type="submit" class="yellow" data-loading="analyze">3. Gerar Leituras de Hoje</button>
     </form>
   {% else %}

@@ -521,13 +521,13 @@
     const loadingMessages = {
       '/sync': {
         title: 'Sincronizando jogos…',
-        msg: 'Baixando calendário da Copa e cadastrando as 48 seleções.',
-        long: false
+        msg: 'Baixando calendário e cadastrando seleções na base.',
+        long: true
       },
       '/sync-profiles': {
         title: 'Montando perfis estatísticos…',
-        msg: 'Consultando histórico API das seleções que jogam hoje na Copa 2026.',
-        long: false
+        msg: 'Consultando histórico API das seleções que jogam hoje. Pode levar alguns minutos.',
+        long: true
       },
       '/analyze': {
         title: 'Gerando leituras…',
@@ -535,6 +535,37 @@
         long: true
       }
     };
+
+    function pipelinePath(path) {
+      if (!path) return '';
+      return String(path).split('?')[0].split('#')[0];
+    }
+
+    function resolvePipelineInfo(evt) {
+      const form = evt.detail.elt?.closest?.('form[data-pipeline]');
+      if (form) {
+        const key = form.getAttribute('data-pipeline');
+        if (loadingMessages[key]) return loadingMessages[key];
+      }
+      const path = pipelinePath(evt.detail.pathInfo?.requestPath);
+      return loadingMessages[path];
+    }
+
+    function showPipelineModal(info) {
+      document.getElementById('modal-overlay').style.display = 'block';
+      document.getElementById('terminal-modal').style.display = 'flex';
+      document.getElementById('terminal-title').textContent = info.title;
+      document.getElementById('terminal-body').innerHTML =
+        '<pre>[SISTEMA] ' + info.msg + '</pre>';
+      const elapsed = document.getElementById('elapsed');
+      if (elapsed) elapsed.textContent = 'Tempo: 0s';
+      document.getElementById('top-progress')?.classList.add('active');
+      document.querySelectorAll('.actions button').forEach(function(b) { b.disabled = true; });
+      if (info.long) startElapsedTimer();
+      if (logPolling) clearInterval(logPolling);
+      logPolling = setInterval(pollLogs, 1000);
+      pollLogs();
+    }
 
     function startElapsedTimer() {
       loadingStart = Date.now();
@@ -555,11 +586,14 @@
       const body = document.getElementById('terminal-body');
       if (!body) return;
       
-      fetch('/logs')
+      fetch('/logs', { credentials: 'same-origin' })
         .then(r => r.text())
         .then(html => {
           body.innerHTML = html;
           body.scrollTop = body.scrollHeight;
+        })
+        .catch(function() {
+          body.innerHTML = '<pre>[SISTEMA] Aguardando logs do servidor…</pre>';
         });
     }
 
@@ -589,25 +623,21 @@
     }
 
     document.addEventListener('htmx:beforeRequest', function(evt) {
-      const path = evt.detail.pathInfo.requestPath;
-      const info = loadingMessages[path];
+      const info = resolvePipelineInfo(evt);
       if (!info) return;
-
-      document.getElementById('modal-overlay').style.display = 'block';
-      const modal = document.getElementById('terminal-modal');
-      modal.style.display = 'flex';
-      document.getElementById('terminal-title').textContent = info.title;
-      document.getElementById('terminal-body').innerHTML = '<pre>[SISTEMA] Aguardando conexão...</pre>';
-      
-      document.getElementById('top-progress')?.classList.add('active');
-      document.querySelectorAll('.actions button').forEach(function(b) { b.disabled = true; });
-      
-      if (info.long) startElapsedTimer();
-      logPolling = setInterval(pollLogs, 1000);
+      showPipelineModal(info);
     });
 
     document.addEventListener('htmx:afterRequest', stopLoadingUI);
     document.addEventListener('htmx:responseError', stopLoadingUI);
+    document.addEventListener('htmx:sendError', stopLoadingUI);
+    document.addEventListener('htmx:timeout', function() {
+      const body = document.getElementById('terminal-body');
+      if (body) {
+        body.innerHTML += '<pre>[ERRO] Tempo esgotado — tente novamente.</pre>';
+      }
+      stopLoadingUI();
+    });
 
     const criteriaExplanations = {
       'combined_avg_goals': {

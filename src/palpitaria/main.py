@@ -212,16 +212,25 @@ def sync_data(request: Request, comp: str | None = None, db: Session = Depends(g
     comp_code = comp or settings.world_cup_code
     try:
         LOG_BUFFER.clear()
+        add_log(f"[PASSO 1] Sincronizando jogos de {comp_code}...")
         client = FootballDataClient(token=token)
         ingest_result = ingest_competition(db, client, competition_code=comp_code, log_callback=add_log)
         renamed = localize_existing_teams(db)
         if renamed:
             add_log(f"Nomes padronizados PT-BR: {renamed} seleções")
+        add_log(f"Concluído: {ingest_result.get('fixtures', 0)} jogos, {ingest_result.get('teams', 0)} seleções.")
     except FootballDataError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Erro na sincronização: {exc}") from exc
+
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            "",
+            status_code=200,
+            headers={"HX-Redirect": f"/?comp={comp_code}"},
+        )
 
     return TEMPLATES.TemplateResponse(
         request,
@@ -245,6 +254,7 @@ def sync_profiles(request: Request, comp: str | None = None, db: Session = Depen
     comp_code = comp or settings.world_cup_code
     try:
         LOG_BUFFER.clear()
+        add_log(f"[PASSO 2] Atualizando perfis API — seleções de hoje ({comp_code})...")
         client = FootballDataClient(token=token)
         profiles = build_team_profiles(
             db,
@@ -255,11 +265,19 @@ def sync_profiles(request: Request, comp: str | None = None, db: Session = Depen
         )
         ready, total = count_teams_with_profiles(db)
         today_ctx = get_today_context()
+        add_log(f"Concluído: {profiles} perfil(is) hoje. Total no banco: {ready}/{total}.")
     except FootballDataError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Erro nos perfis: {exc}") from exc
+
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            "",
+            status_code=200,
+            headers={"HX-Redirect": f"/?comp={comp_code}"},
+        )
 
     return TEMPLATES.TemplateResponse(
         request,
@@ -370,7 +388,7 @@ def run_analysis(request: Request, comp: str | None = None, db: Session = Depend
         return HTMLResponse(
             "",
             status_code=200,
-            headers={"HX-Redirect": "/"},
+            headers={"HX-Redirect": f"/?comp={comp_code}"},
         )
 
     return RedirectResponse(url="/", status_code=303)
