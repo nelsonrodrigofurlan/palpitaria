@@ -36,20 +36,14 @@
 
 <div class="actions">
   {% if request.session.get('user_email') == 'nelson.r.furlan@gmail.com' %}
-    <form hx-post="/sync?comp={{ current_comp }}" data-pipeline="/sync" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="300000">
-      <button type="submit" data-loading="sync">1. Sincronizar Jogos</button>
-    </form>
-    <form hx-post="/sync-profiles?comp={{ current_comp }}" data-pipeline="/sync-profiles" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="600000">
-      <button type="submit" class="secondary" data-loading="profiles">2. Atualizar Perfis (seleções de hoje)</button>
-    </form>
-    <form hx-post="/analyze?comp={{ current_comp }}" data-pipeline="/analyze" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="600000">
-      <button type="submit" class="yellow" data-loading="analyze">3. Gerar Leituras de Hoje</button>
+    <form hx-post="/pipeline?comp={{ current_comp }}" data-pipeline="/pipeline" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="900000">
+      <button type="submit" style="background: var(--blue); color: white; font-weight: 700; padding: 0.75rem 2rem; border-radius: 12px; border: none; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; box-shadow: var(--shadow);" data-loading="pipeline">
+        🚀 Atualizar Tudo (Sincronizar + Perfis + Leituras)
+      </button>
     </form>
   {% else %}
     <div style="display: flex; gap: 1rem; opacity: 0.5; pointer-events: none; filter: grayscale(1);">
-      <button type="button" disabled>1. Sincronizar Jogos</button>
-      <button type="button" class="secondary" disabled>2. Atualizar Perfis</button>
-      <button type="button" class="yellow" disabled>3. Gerar Leituras</button>
+      <button type="button" disabled>🚀 Atualizar Tudo</button>
     </div>
     <div class="alert" style="background: #f1f5f9; border-color: #cbd5e1; color: #475569; display: flex; align-items: center; gap: 1.5rem; padding: 1.5rem; margin-top: 1rem;">
       <img src="/static/assets/o_pai_caricatura.png" alt="O Pai" style="height: 100px; width: auto; border-radius: 12px; mix-blend-mode: multiply;">
@@ -65,8 +59,8 @@
     </div>
   {% endif %}
   <p class="sub" style="margin: 0.5rem 0 0; font-size: 0.85rem; color: var(--muted);">
-    Passo 3 coleta histórico web das seleções de hoje (amistosos/eliminatórias), bastidores, clima/árbitro e recomendação.
-    Requer <code>OPENAI_API_KEY</code> (OpenRouter). ~3–5 min no total.
+    A atualização completa sincroniza o calendário, atualiza perfis técnicos e coleta bastidores/clima via web para gerar as recomendações IA.
+    Requer <code>OPENAI_API_KEY</code>. O processo total pode levar de 5 a 10 min.
   </p>
 </div>
 

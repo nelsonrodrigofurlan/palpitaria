@@ -329,6 +329,20 @@ def sync_profiles(request: Request, comp: str | None = None, db: Session = Depen
 
 @app.post("/analyze")
 def run_analysis(request: Request, comp: str | None = None, db: Session = Depends(get_db), user=Depends(admin_required)):
+    LOG_BUFFER.clear()
+    comp_code = comp or settings.world_cup_code
+    _execute_analysis_pipeline(db, comp_code)
+    
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            "",
+            status_code=200,
+            headers={"HX-Redirect": f"/?comp={comp_code}"},
+        )
+    return RedirectResponse(url="/", status_code=303)
+
+
+def _execute_analysis_pipeline(db: Session, comp_code: str):
     from palpitaria.services.config_service import get_api_config
     
     token = get_api_config(db, "FOOTBALL_DATA_TOKEN")
@@ -344,22 +358,15 @@ def run_analysis(request: Request, comp: str | None = None, db: Session = Depend
             detail="Configure OPENAI_API_KEY no Admin ou .env para coletar bastidores/contexto e gerar a recomendação.",
         )
 
-    comp_code = comp or settings.world_cup_code
     today = get_today_context()
     analyses = analyze_upcoming(db, limit=50, for_today_only=True, competition_code=comp_code)
     explained = 0
     candidates = 0
 
     if not analyses:
-        detail = f"Nenhum jogo de {comp_code} programado para hoje ({today.label})."
-        if request.headers.get("HX-Request"):
-            return HTMLResponse(
-                f'<div class="alert">{detail} Volte no dia do jogo.</div>',
-                status_code=200,
-            )
-        raise HTTPException(status_code=400, detail=detail)
+        add_log(f"AVISO: Nenhum jogo de {comp_code} programado para hoje ({today.label}).")
+        return
 
-    LOG_BUFFER.clear()
     add_log(f"Iniciando pipeline de {len(analyses)} jogos de {comp_code} (web perfis → API → scrap → recomendação)...")
 
     add_log(f"[0/3] Perfis híbridos — API {comp_code} + histórico web das seleções de hoje...")
@@ -392,11 +399,6 @@ def run_analysis(request: Request, comp: str | None = None, db: Session = Depend
         analysis.match_context = match_context or default_match_context()
 
         add_log("  [3/3] Decisão de mercado (LLM + web + bastidores)...")
-        # Passar chaves dinâmicas para o LLM se necessário (ou o llm_client já usa o singleton?)
-        # O llm_client usa settings. Eu deveria atualizar o singleton ou passar as chaves.
-        # Vou atualizar o singleton temporariamente ou mudar o llm_client para aceitar chaves.
-        
-        # Por enquanto, vou atualizar o settings temporariamente (não é o ideal, mas funciona para o request)
         settings.openai_api_key = llm_key
         settings.openai_base_url = llm_base
         
@@ -416,13 +418,57 @@ def run_analysis(request: Request, comp: str | None = None, db: Session = Depend
 
     add_log(f"Concluído: {explained} leituras, {candidates} candidatos.")
 
+
+@app.post("/pipeline", response_class=HTMLResponse)
+def run_full_pipeline(request: Request, comp: str | None = None, db: Session = Depends(get_db), user=Depends(admin_required)):
+    from palpitaria.services.config_service import get_api_config
+    
+    token = get_api_config(db, "FOOTBALL_DATA_TOKEN")
+    if not token:
+        raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no Admin ou .env")
+
+    comp_code = comp or settings.world_cup_code
+    
+    LOG_BUFFER.clear()
+    add_log(f"🚀 INICIANDO PIPELINE COMPLETO ({comp_code})")
+    
+    try:
+        # PASSO 1: Sync Data
+        add_log("\n[PASSO 1/3] Sincronizando jogos e resultados...")
+        client = FootballDataClient(token=token)
+        ingest_result = ingest_competition(db, client, competition_code=comp_code, log_callback=add_log)
+        localize_existing_teams(db)
+        resolve_pending_recommendations(db, comp_code)
+        add_log(f"✓ Jogos sincronizados: {ingest_result.get('fixtures', 0)} novos/atualizados.")
+
+        # PASSO 2: Sync Profiles
+        add_log("\n[PASSO 2/3] Atualizando perfis técnicos (API)...")
+        profiles = build_team_profiles(
+            db,
+            client,
+            log_callback=add_log,
+            competition_code=comp_code,
+            today_only=True,
+        )
+        ready, total = count_teams_with_profiles(db)
+        add_log(f"✓ Perfis API atualizados: {profiles} hoje. Total: {ready}/{total}.")
+
+        # PASSO 3: Analyze
+        add_log("\n[PASSO 3/3] Gerando leituras IA (Web + Scrap + LLM)...")
+        _execute_analysis_pipeline(db, comp_code)
+        add_log("\n✓ PIPELINE CONCLUÍDO COM SUCESSO!")
+
+    except Exception as exc:
+        db.rollback()
+        add_log(f"\n❌ ERRO NO PIPELINE: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erro no pipeline: {exc}")
+
     if request.headers.get("HX-Request"):
         return HTMLResponse(
             "",
             status_code=200,
             headers={"HX-Redirect": f"/?comp={comp_code}"},
         )
-
     return RedirectResponse(url="/", status_code=303)
 
 
