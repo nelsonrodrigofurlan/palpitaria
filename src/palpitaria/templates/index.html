@@ -219,6 +219,25 @@
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 1rem;">
+        {% if betfair_odds %}
+          {% set match_odds = None %}
+          {% for go in betfair_odds %}
+            {% if (go.home_team in a.home_name or a.home_name in go.home_team) and (go.away_team in a.away_name or a.away_name in go.away_team) %}
+              {% set match_odds = go.betfair_ex %}
+            {% endif %}
+          {% endfor %}
+          
+          {% if match_odds %}
+            <div style="display: flex; gap: 0.5rem; font-size: 0.75rem; background: #f8fafc; padding: 0.25rem 0.5rem; border-radius: 6px; border: 1px solid #e2e8f0;">
+              <span style="color: var(--muted); font-weight: 600;">Betfair:</span>
+              {% for mkt in match_odds %}
+                {% if mkt.key == 'h2h' %}
+                  <span title="Home/Draw/Away">🏠 {{ mkt.outcomes[0].price }} · 🤝 {{ mkt.outcomes[2].price }} · 🚀 {{ mkt.outcomes[1].price }}</span>
+                {% endif %}
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endif %}
         <div class="badge err">Risco de 0-0</div>
         <span class="toggle-icon">▼</span>
       </div>

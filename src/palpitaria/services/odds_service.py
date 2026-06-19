@@ -1,5 +1,6 @@
 import httpx
 from palpitaria.config import settings
+from palpitaria.services.team_names import localize_team_name
 
 def fetch_odds_api_data(sport="soccer_brazil_campeonato_serie_a", regions="eu", markets="h2h,totals"):
     """
@@ -31,10 +32,12 @@ def extract_betfair_odds(odds_data):
     """Filtra as odds especificamente da Betfair Exchange."""
     results = []
     for game in odds_data:
+        home_pt = localize_team_name(game.get("home_team"))
+        away_pt = localize_team_name(game.get("away_team"))
         game_info = {
             "id": game.get("id"),
-            "home_team": game.get("home_team"),
-            "away_team": game.get("away_team"),
+            "home_team": home_pt,
+            "away_team": away_pt,
             "commence_time": game.get("commence_time"),
             "betfair_ex": None
         }
