@@ -86,13 +86,18 @@
       </div>
       
       <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-        <input type="number" step="0.01" name="stake" placeholder="Stake" required style="flex: 1; min-width: 100px; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
+        <input type="number" step="0.01" name="stake" placeholder="{% if b.side == 'LAY' %}Quanto quer ganhar (Stake){% else %}Stake{% endif %}" required style="flex: 1; min-width: 100px; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
         <select name="outcome" style="flex: 1; min-width: 120px; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1;">
           <option value="PENDING">Pendente</option>
           <option value="WIN">GREEN (Win)</option>
           <option value="LOSS">RED (Loss)</option>
         </select>
       </div>
+      {% if b.side == 'LAY' %}
+      <p style="margin: 0; font-size: 0.65rem; color: var(--muted); line-height: 1.2;">
+        No LAY, informe o valor que deseja <strong>ganhar</strong>. O sistema mostrará o risco (Liability) na tabela abaixo.
+      </p>
+      {% endif %}
       
       <button type="submit" class="secondary" style="width: 100%;">Lançar Entrada</button>
     </form>
@@ -117,7 +122,13 @@
             <tr>
               <td>{{ bet.description }}</td>
               <td>{{ bet.odds }}</td>
-              <td>{{ bet.stake }}</td>
+              <td>
+                {% if b.side == 'LAY' %}
+                <span title="Stake do backer: {{ "%.2f"|format(bet.stake) }}">{{ "%.2f"|format(bet.stake * (bet.odds - 1)) }}</span> <small style="color: var(--muted); font-size: 0.65rem;">(Risco)</small>
+                {% else %}
+                {{ bet.stake }}
+                {% endif %}
+              </td>
               <td>
                 {% if bet.outcome == 'PENDING' %}
                 <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">

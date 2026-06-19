@@ -929,15 +929,18 @@ async def add_bet(request: Request, db: Session = Depends(get_db), user=Depends(
     outcome = form.get("outcome") # WIN, LOSS, PENDING
     
     commission_rate = branch.commission_rate if branch else 6.5
+    # O valor vindo do form agora é sempre a STAKE (o que se quer ganhar no LAY ou apostar no BACK)
+    actual_stake = stake
+
     pl = compute_bet_pl(
-        stake, odds, outcome or "PENDING", commission_rate, side=branch.side
+        actual_stake, odds, outcome or "PENDING", commission_rate, side=branch.side
     )
 
     bet = Bet(
         branch_id=branch_id,
         description=description,
         odds=odds,
-        stake=stake,
+        stake=actual_stake,  # Salvamos a stake real (o que se ganha)
         outcome=outcome,
         profit_loss=pl,
         competition_code=comp_code or settings.world_cup_code
