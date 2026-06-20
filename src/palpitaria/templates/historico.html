@@ -5,23 +5,14 @@
   <div style="display: flex; justify-content: space-between; align-items: flex-start;">
     <div>
       <h1>📅 Histórico Mensal</h1>
-      <p class="sub">Consolidado por filial — ao virar o mês, os cards ativos zeram e o fechamento aparece aqui</p>
-    </div>
-    <div style="display: flex; align-items: center; gap: 1rem; background: white; padding: 0.5rem 1rem; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: var(--shadow);">
-      <span style="font-size: 0.85rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Campeonato:</span>
-      <select name="comp" onchange="window.location.href='/historico?comp=' + this.value" style="border: none; background: transparent; font-weight: 700; color: var(--blue); cursor: pointer; font-size: 1rem; outline: none;">
-        {% for comp in active_comps %}
-          <option value="{{ comp.code }}" {% if current_comp == comp.code %}selected{% endif %}>{{ comp.name }}</option>
-        {% endfor %}
-      </select>
+      <p class="sub">Consolidado por filial — acompanhe a evolução on-line do mês atual e o fechamento dos meses passados</p>
     </div>
   </div>
 </header>
 
 <div class="card" style="margin-bottom: 1.5rem; background: #f0fdf4; border-color: #bbf7d0;">
   <p style="margin: 0; font-size: 0.9rem;">
-    <strong>Mês ativo:</strong> {{ current_period }} — entradas lançadas agora vão para os cards em
-    <a href="/branches">Filiais (P&L)</a>.
+    <strong>Mês ativo:</strong> {{ current_period }} — as linhas marcadas como <span class="badge ok" style="font-size: 0.65rem; letter-spacing: 0.05em;">ON-LINE</span> refletem as entradas em tempo real.
   </p>
 </div>
 
@@ -31,7 +22,7 @@
     <thead>
       <tr>
         <th>Período</th>
-        <th>Comp</th>
+        <th>Status</th>
         <th>Filial</th>
         <th>Entradas</th>
         <th>Greens</th>
@@ -39,14 +30,20 @@
         <th>Pendentes</th>
         <th>Stake total</th>
         <th>P&L</th>
-        <th>Fechado em</th>
+        <th>Fechamento</th>
       </tr>
     </thead>
     <tbody>
       {% for row in rows %}
-      <tr>
+      <tr {% if row.is_active %}style="background: rgba(34, 197, 94, 0.02);"{% endif %}>
         <td><strong>{{ row.period }}</strong></td>
-        <td><span class="badge" style="background: #e2e8f0; color: #475569; font-size: 0.65rem;">{{ row.competition_code }}</span></td>
+        <td>
+          {% if row.is_active %}
+            <span class="badge ok" style="font-size: 0.65rem; letter-spacing: 0.05em;">ON-LINE</span>
+          {% else %}
+            <span class="badge" style="background: #e2e8f0; color: #475569; font-size: 0.65rem; letter-spacing: 0.05em;">FECHADO</span>
+          {% endif %}
+        </td>
         <td>{{ row.branch_name }}</td>
         <td>{{ row.bet_count }}</td>
         <td class="pass">
@@ -61,7 +58,13 @@
         <td class="{% if row.total_pl >= 0 %}pass{% else %}fail{% endif %}">
           {{ "%.2f"|format(row.total_pl) }}
         </td>
-        <td style="font-size: 0.8rem; color: var(--muted);">{{ row.closed_at | kickoff(app_timezone) }}</td>
+        <td style="font-size: 0.8rem; color: var(--muted);">
+          {% if row.closed_at %}
+            {{ row.closed_at | kickoff(app_timezone) }}
+          {% else %}
+            —
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
