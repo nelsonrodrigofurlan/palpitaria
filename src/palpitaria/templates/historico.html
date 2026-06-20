@@ -12,7 +12,7 @@
 
 <div class="card" style="margin-bottom: 1.5rem; background: #f0fdf4; border-color: #bbf7d0;">
   <p style="margin: 0; font-size: 0.9rem;">
-    <strong>Mês ativo:</strong> {{ current_period }} — as linhas marcadas como <span class="badge ok" style="font-size: 0.65rem; letter-spacing: 0.05em;">ON-LINE</span> refletem as entradas em tempo real.
+    <strong>Mês ativo:</strong> {{ current_period }} — as linhas marcadas como <span class="badge ok" style="font-size: 0.65rem; letter-spacing: 0.05em;">MÊS CORRENTE</span> refletem as entradas em tempo real.
   </p>
 </div>
 
@@ -39,9 +39,9 @@
         <td><strong>{{ row.period }}</strong></td>
         <td>
           {% if row.is_active %}
-            <span class="badge ok" style="font-size: 0.65rem; letter-spacing: 0.05em;">ON-LINE</span>
+            <span class="badge ok" style="font-size: 0.65rem; letter-spacing: 0.05em;">MÊS CORRENTE</span>
           {% else %}
-            <span class="badge" style="background: #e2e8f0; color: #475569; font-size: 0.65rem; letter-spacing: 0.05em;">FECHADO</span>
+            <span class="badge" style="background: #e2e8f0; color: #475569; font-size: 0.65rem; letter-spacing: 0.05em;">MÊS FECHADO</span>
           {% endif %}
         </td>
         <td>{{ row.branch_name }}</td>
