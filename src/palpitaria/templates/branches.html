@@ -105,9 +105,9 @@
     {% if stats[b.id].bets %}
     <div style="margin-top: 1.5rem;">
       <h3 style="font-size: 0.9rem; color: var(--muted); margin-bottom: 0.5rem;">Últimas Entradas</h3>
-      <div class="table-container">
-        <table style="font-size: 0.75rem;">
-          <thead>
+      <div class="table-container" style="max-height: 240px; overflow-y: auto; border: 1px solid #f1f5f9; border-radius: 8px;">
+        <table style="font-size: 0.75rem; margin-top: 0;">
+          <thead style="position: sticky; top: 0; background: white; z-index: 10; box-shadow: 0 1px 0 #e2e8f0;">
             <tr>
               <th>Jogo</th>
               <th>Odd</th>

@@ -746,7 +746,7 @@ def list_branches(request: Request, comp: str | None = None, db: Session = Depen
             "loss_count": loss_count,
             "bet_count": bet_count,
             "hit_rate_pct": hit_rate_pct(win_count, bet_count),
-            "bets": bets[:10]
+            "bets": bets[:50]
         }
 
     return TEMPLATES.TemplateResponse(
