@@ -99,19 +99,76 @@ def apply_schema_migrations() -> None:
             branch_cols = {c["name"] for c in inspect(engine).get_columns("branches")}
             if "side" not in branch_cols:
                 conn.execute(text("ALTER TABLE branches ADD COLUMN side VARCHAR(10) DEFAULT 'BACK'"))
-            
+
             comp_cols = {c["name"] for c in inspect(engine).get_columns("competitions")}
             if "odds_json" not in comp_cols:
                 conn.execute(text("ALTER TABLE competitions ADD COLUMN odds_json TEXT"))
-                conn.execute(
-                    text(
-                        "UPDATE branches SET side = 'LAY' WHERE "
-                        "lower(name) LIKE '%correct score%' OR lower(slug) LIKE '%correct%score%' "
-                        "OR lower(coalesce(description, '')) LIKE '%correct score%' "
-                        "OR lower(name) LIKE '%placar exato%'"
-                    )
+            conn.execute(
+                text(
+                    "UPDATE branches SET side = 'LAY' WHERE "
+                    "lower(name) LIKE '%correct score%' OR lower(slug) LIKE '%correct%score%' "
+                    "OR lower(coalesce(description, '')) LIKE '%correct score%' "
+                    "OR lower(name) LIKE '%placar exato%'"
                 )
-                conn.execute(text("UPDATE branches SET side = 'BACK' WHERE side IS NULL"))
+            )
+            conn.execute(text("UPDATE branches SET side = 'BACK' WHERE side IS NULL"))
+
+        _migrate_pipeline_daily_per_comp(conn, dialect, engine)
+
+
+def _migrate_pipeline_daily_per_comp(conn, dialect: str, engine: Engine) -> None:
+    """Trava diária do pipeline passa a ser por campeonato (run_day + comp_code)."""
+    if not inspect(engine).has_table("remote_pipeline_daily"):
+        return
+    cols = {c["name"] for c in inspect(engine).get_columns("remote_pipeline_daily")}
+    if "comp_code" in cols:
+        return
+
+    if dialect == "postgresql":
+        conn.execute(
+            text(
+                "ALTER TABLE remote_pipeline_daily "
+                "ADD COLUMN IF NOT EXISTS comp_code VARCHAR(10) NOT NULL DEFAULT 'WC'"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE remote_pipeline_daily AS r "
+                "SET comp_code = COALESCE(p.comp_code, 'WC') "
+                "FROM pipeline_runs AS p "
+                "WHERE p.id = r.pipeline_run_id"
+            )
+        )
+        conn.execute(text("ALTER TABLE remote_pipeline_daily DROP CONSTRAINT IF EXISTS remote_pipeline_daily_pkey"))
+        conn.execute(text("ALTER TABLE remote_pipeline_daily ADD PRIMARY KEY (run_day, comp_code)"))
+    elif dialect == "sqlite":
+        conn.execute(
+            text(
+                """
+                CREATE TABLE remote_pipeline_daily_new (
+                    run_day VARCHAR(10) NOT NULL,
+                    comp_code VARCHAR(10) NOT NULL DEFAULT 'WC',
+                    pipeline_run_id INTEGER NOT NULL,
+                    created_at DATETIME,
+                    PRIMARY KEY (run_day, comp_code),
+                    FOREIGN KEY(pipeline_run_id) REFERENCES pipeline_runs(id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT OR REPLACE INTO remote_pipeline_daily_new
+                    (run_day, comp_code, pipeline_run_id, created_at)
+                SELECT r.run_day, COALESCE(p.comp_code, 'WC'), r.pipeline_run_id, r.created_at
+                FROM remote_pipeline_daily r
+                LEFT JOIN pipeline_runs p ON p.id = r.pipeline_run_id
+                """
+            )
+        )
+        conn.execute(text("DROP TABLE remote_pipeline_daily"))
+        conn.execute(text("ALTER TABLE remote_pipeline_daily_new RENAME TO remote_pipeline_daily"))
 
 
 def init_db() -> None:

@@ -41,7 +41,7 @@ def process_user_message(db: Session, message: str, user_id: int | None = None) 
     user_content = f"Mensagem do Usuário: {message}\n\nLista de Times:\n{json.dumps(team_list, ensure_ascii=False)}"
     
     try:
-        response = chat_completion(AUDITOR_SYSTEM_PROMPT, user_content, temperature=0.2)
+        response = chat_completion(AUDITOR_SYSTEM_PROMPT, user_content, temperature=0.2, feature="chat_audit")
         parsed = _parse_json_from_llm(response)
         
         if not parsed:

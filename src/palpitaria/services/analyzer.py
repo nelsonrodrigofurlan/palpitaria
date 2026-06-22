@@ -571,29 +571,109 @@ def infer_favorite(
     return None
 
 
+def _build_winner_reason(
+    fav: FavoriteRead,
+    analysis: FixtureAnalysis,
+    home_profile,
+    away_profile,
+    *,
+    scope: str,
+    max_chars: int = 500,
+) -> str:
+    """Fundamentação objetiva do 1X2 — até max_chars, tom confiante e sóbrio."""
+    is_home = fav.name == analysis.home_name
+    fav_p = home_profile if is_home else away_profile
+    opp_p = away_profile if is_home else home_profile
+    opp_name = analysis.away_name if is_home else analysis.home_name
+
+    fav_g = fav_p.avg_goals_scored
+    fav_c = fav_p.avg_goals_conceded
+    opp_g = opp_p.avg_goals_scored
+    opp_c = opp_p.avg_goals_conceded
+    n_min = min(fav_p.matches_sampled, opp_p.matches_sampled)
+
+    lead = "Fora do filtro de gols, " if scope == "alternate" else ""
+    sentences: list[str] = []
+
+    venue = "em casa" if is_home else "fora de casa"
+
+    # 1) Tese principal — ataque do favorito vs defesa adversária
+    if fav_g >= opp_c + 0.25:
+        sentences.append(
+            f"{fav.name} marca em média {fav_g:.1f} gols/jogo e pega {opp_name} "
+            f"sófrendo {opp_c:.1f} — o favorito {venue} tem onde explorar."
+        )
+    elif fav_g > opp_g and fav_c <= opp_c:
+        sentences.append(
+            f"{fav.name} equilibra melhor o duelo: {fav_g:.1f} marcados e {fav_c:.1f} sofridos "
+            f"contra {opp_g:.1f} e {opp_c:.1f} de {opp_name}."
+        )
+    else:
+        sentences.append(
+            f"{fav.name} leva vantagem no confronto direto de forças ({fav.detail})."
+        )
+
+    # 2) Resultado recente (quando há amostra mínima)
+    if n_min >= settings.min_sample_for_win_rate_favorite:
+        wr_gap = fav_p.win_rate - opp_p.win_rate
+        if wr_gap >= 0.10:
+            sentences.append(
+                f"Vitórias recentes: {fav_p.win_rate:.0%} ({fav.name}) vs {opp_p.win_rate:.0%} ({opp_name})."
+            )
+
+    # 3) Fechamento — a dica matadora
+    if fav.basis == "combined":
+        closer = (
+            f"Produção ofensiva e resultado convergem para {fav.name} impor o ritmo e levar os 3 pontos."
+        )
+    elif fav.basis == "outlier_guard":
+        closer = (
+            f"Leitura corrigida após outlier na amostra adversária — {fav.name} é o lado mais confiável no 1X2."
+        )
+    else:
+        if is_home:
+            closer = (
+                f"No mando de campo, {fav.name} tem margem estatística para controlar o jogo e vencer {opp_name}."
+            )
+        else:
+            closer = (
+                f"Mesmo fora de casa, {fav.name} traz números superiores para bater {opp_name} no 1X2."
+            )
+    sentences.append(closer)
+
+    text = lead + " ".join(sentences)
+    if len(text) > max_chars:
+        text = text[: max_chars - 1].rstrip() + "…"
+    return text
+
+
 def _winner_pick(
     analysis: FixtureAnalysis,
     home_profile,
     away_profile,
     *,
     scope: str,
-    strong_verdict_rate: float = 0.90,  # Aumentado para 0.90
+    strong_verdict_rate: float = 0.90,
 ) -> dict | None:
     fav = infer_favorite(analysis, home_profile, away_profile)
     if fav is None:
         return None
-    
-    # Se a amostra for pequena, nunca dar veredito STRONG para vencedor
+
     n_min = min(home_profile.matches_sampled, away_profile.matches_sampled)
     verdict = "STRONG" if (fav.strength >= strong_verdict_rate and n_min >= 10) else "CANDIDATE"
-    
-    prefix = "Fora do filtro de gols, mas " if scope == "alternate" else ""
+
+    # Alternativa 1X2 só com favoritismo convincente — evita picks frágeis (ex.: edge mínimo)
+    if scope == "alternate":
+        if fav.basis == "outlier_guard" and fav.strength < 0.55:
+            return None
+        if fav.strength < 0.42:
+            return None
+
     return {
         "market": f"VITÓRIA: {fav.name}",
         "verdict": verdict,
-        "reason": (
-            f"{prefix}{fav.name} é favorito ({fav.basis}: {fav.detail}). "
-            "Leitura de 1X2 com estatística ajustada — amostras pequenas não decidem sozinhas."
+        "reason": _build_winner_reason(
+            fav, analysis, home_profile, away_profile, scope=scope, max_chars=500
         ),
         "scope": scope,
     }

@@ -204,7 +204,7 @@ def refine_best_pick(analysis: FixtureAnalysis) -> dict | None:
 
     try:
         user_content = f"Dados para decisão de mercado:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
-        response = chat_completion(system, user_content, temperature=0.25, max_tokens=800)
+        response = chat_completion(system, user_content, temperature=0.25, max_tokens=800, feature="explainer_pick")
         parsed = _parse_json_from_llm(response)
         if not parsed or not parsed.get("market"):
             return analysis.best_pick
@@ -276,6 +276,7 @@ def _request_explanation(system: str, user_content: str, *, retry: bool = False)
         user_content + suffix,
         temperature=0.2 if retry else 0.35,
         max_tokens=settings.llm_explanation_max_tokens,
+        feature="explainer",
     )
 
 

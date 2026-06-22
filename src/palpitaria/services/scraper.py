@@ -136,7 +136,7 @@ def analyze_team_moment(team_name: str, raw_content: str, *, squad: list[str] | 
         )
     user_content = f"Notícias e informações brutas sobre a seleção do {team_name}:\n\n{raw_content}{squad_block}"
     try:
-        response = chat_completion(TEAM_SYSTEM_PROMPT, user_content, max_tokens=2000)
+        response = chat_completion(TEAM_SYSTEM_PROMPT, user_content, max_tokens=2000, feature="scraper_team")
         cleaned_response = response.strip()
         start = cleaned_response.find("{")
         end = cleaned_response.rfind("}") + 1
@@ -169,7 +169,7 @@ Retorne SOMENTE JSON válido (sem markdown):
 """
     user_content = f"Informações brutas sobre o jogo {home_name} x {away_name}:\n\n{raw_content}"
     try:
-        response = chat_completion(system_prompt, user_content, max_tokens=1500, temperature=0.2)
+        response = chat_completion(system_prompt, user_content, max_tokens=1500, temperature=0.2, feature="scraper_context")
         parsed = _parse_json_from_llm(response)
         if parsed:
             return parsed

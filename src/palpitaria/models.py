@@ -252,8 +252,27 @@ class ApiConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class LlmUsageLog(Base):
+    """Registro local de chamadas LLM — custo e tokens por operação."""
+
+    __tablename__ = "llm_usage_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(30), default="openrouter", index=True)
+    model: Mapped[str] = mapped_column(String(120))
+    feature: Mapped[str] = mapped_column(String(40), index=True)  # explainer, scraper, wc_profile, chat
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    generation_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    success: Mapped[bool] = mapped_column(default=True)
+    error_message: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class PipelineRun(Base):
-    """Execução do pipeline — remoto (API) com trava diária; web sem limite."""
+    """Execução do pipeline — trava global de 1x por dia (web ou remoto)."""
 
     __tablename__ = "pipeline_runs"
 
@@ -269,11 +288,12 @@ class PipelineRun(Base):
 
 
 class RemotePipelineDaily(Base):
-    """Trava atômica: no máximo 1 disparo remoto por dia."""
+    """Trava atômica: no máximo 1 pipeline completo por dia e por campeonato."""
 
     __tablename__ = "remote_pipeline_daily"
 
     run_day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    comp_code: Mapped[str] = mapped_column(String(10), primary_key=True, default="WC")
     pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

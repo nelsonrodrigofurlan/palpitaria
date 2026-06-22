@@ -240,6 +240,11 @@ def _render_home(request: Request, db: Session, user, comp_code: str | None = No
         except:
             odds_list = []
 
+    from palpitaria.services.pipeline_trigger import pipeline_used_today
+
+    pipeline_used, pipeline_today_run = pipeline_used_today(db, comp_code)
+    pipeline_running_here = PIPELINE_STATE["running"] and PIPELINE_STATE.get("comp") == comp_code
+
     return TEMPLATES.TemplateResponse(
         request,
         "index.html",
@@ -261,6 +266,9 @@ def _render_home(request: Request, db: Session, user, comp_code: str | None = No
             "current_comp": comp_code,
             "betfair_odds": odds_list,
             "user": user,
+            "pipeline_used_today": pipeline_used,
+            "pipeline_running": pipeline_running_here,
+            "pipeline_today_run": pipeline_today_run,
         },
     )
 
@@ -498,8 +506,35 @@ def _execute_analysis_pipeline(db: Session, comp_code: str):
 @app.post("/pipeline", response_class=HTMLResponse)
 def run_full_pipeline(request: Request, comp: str | None = None, db: Session = Depends(get_db), user=Depends(admin_required)):
     from palpitaria.services.config_service import get_api_config
+    from palpitaria.services.pipeline_trigger import claim_daily_pipeline_run, finalize_pipeline_run
 
-    comp_code = _start_pipeline(comp, db, get_api_config(db, "FOOTBALL_DATA_TOKEN"))
+    comp_code = comp or settings.world_cup_code
+    if PIPELINE_STATE["running"]:
+        msg = "Já há uma atualização em andamento. Aguarde terminar."
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(f'<div class="alert">{msg}</div>', status_code=409)
+        raise HTTPException(status_code=409, detail=msg)
+
+    try:
+        run, _ = claim_daily_pipeline_run(db, comp_code, trigger="web_admin")
+    except HTTPException as exc:
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(f'<div class="alert">🔒 {exc.detail}</div>', status_code=exc.status_code)
+        raise
+
+    football_token = get_api_config(db, "FOOTBALL_DATA_TOKEN")
+    if not football_token:
+        finalize_pipeline_run(db, run.id, error="FOOTBALL_DATA_TOKEN não configurado")
+        raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no Admin ou .env")
+
+    try:
+        _start_pipeline(comp_code, db, football_token, run_id=run.id)
+    except HTTPException:
+        finalize_pipeline_run(db, run.id, error="Falha ao iniciar pipeline")
+        raise
+    except Exception as exc:
+        finalize_pipeline_run(db, run.id, error=str(exc))
+        raise HTTPException(status_code=500, detail="Falha ao iniciar pipeline") from exc
 
     if request.headers.get("HX-Request"):
         return HTMLResponse("", status_code=202)
@@ -1470,6 +1505,21 @@ def admin_toggle_competition(comp_id: int, db: Session = Depends(get_db), user=D
         comp.is_active = not comp.is_active
         db.commit()
     return RedirectResponse(url="/admin/config", status_code=303)
+
+
+@app.get("/admin/custos", response_class=HTMLResponse)
+def admin_custos(request: Request, db: Session = Depends(get_db), user=Depends(admin_required)):
+    from palpitaria.services.cost_service import build_cost_dashboard
+
+    dashboard = build_cost_dashboard(db)
+    return TEMPLATES.TemplateResponse(
+        request,
+        "admin_custos.html",
+        {
+            **dashboard,
+            "app_timezone": settings.app_timezone,
+        },
+    )
 
 
 @app.get("/health/live")

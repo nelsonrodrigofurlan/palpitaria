@@ -219,7 +219,7 @@ def _merge_match_lists(*lists: list[dict]) -> list[dict]:
 def extract_web_matches(team_name: str, raw_content: str) -> dict:
     user = f"Seleção: {team_name}\n\nFontes da web:\n{raw_content}"
     try:
-        response = chat_completion(TEAM_RESULTS_SYSTEM, user, temperature=0.1, max_tokens=2500)
+        response = chat_completion(TEAM_RESULTS_SYSTEM, user, temperature=0.1, max_tokens=2500, feature="wc_profile")
         parsed = _parse_json_from_llm(response)
         if not parsed:
             return {"matches": [], "confidence": 0, "sources_summary": "parse failed"}

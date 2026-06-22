@@ -42,11 +42,27 @@
 
 <div class="actions">
   {% if request.session.get('user_email') == 'nelson.r.furlan@gmail.com' %}
+    {% if pipeline_running %}
+    <button type="button" disabled style="background: #94a3b8; color: white; font-weight: 700; padding: 0.75rem 2rem; border-radius: 12px; border: none; cursor: not-allowed; display: flex; align-items: center; gap: 0.5rem; opacity: 0.85;">
+      ⏳ Atualização em andamento…
+    </button>
+    {% elif pipeline_used_today %}
+    <button type="button" disabled title="1 atualização por dia por campeonato" style="background: #e2e8f0; color: #64748b; font-weight: 700; padding: 0.75rem 2rem; border-radius: 12px; border: none; cursor: not-allowed; display: flex; align-items: center; gap: 0.5rem;">
+      🔒 {{ current_comp }} atualizado hoje
+    </button>
+    {% if pipeline_today_run and pipeline_today_run.completed_at %}
+    <span style="font-size: 0.8rem; color: var(--muted); align-self: center;">
+      Última execução: <strong>{{ pipeline_today_run.completed_at | kickoff(app_timezone) }}</strong>
+      {% if pipeline_today_run.status == 'error' %} · com erro{% endif %}
+    </span>
+    {% endif %}
+    {% else %}
     <form hx-post="/pipeline?comp={{ current_comp }}" data-pipeline="/pipeline" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="900000">
       <button type="submit" style="background: var(--blue); color: white; font-weight: 700; padding: 0.75rem 2rem; border-radius: 12px; border: none; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; box-shadow: var(--shadow);" data-loading="pipeline">
         🚀 Atualizar Tudo (Sincronizar + Perfis + Leituras)
       </button>
     </form>
+    {% endif %}
     <button type="button" onclick="showSummaryModal()" style="background: #6366f1; color: white; font-weight: 700; padding: 0.75rem 2rem; border-radius: 12px; border: none; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; box-shadow: var(--shadow);">
       📸 Resumo para Grupo
     </button>

@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from palpitaria.config import settings
-from palpitaria.models import PipelineLogLine, PipelineRun, RemotePipelineDaily
+from palpitaria.models import Fixture, FixtureReport, PipelineLogLine, PipelineRun, RemotePipelineDaily
 from palpitaria.services.analyzer import get_today_context
 
 TRIGGER_PATH = "/api/v1/pipeline/trigger"
@@ -52,29 +52,93 @@ def verify_trigger_request(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Não autorizado.")
 
 
-def claim_remote_daily_run(db: Session, comp_code: str) -> tuple[PipelineRun, str]:
-    """Reserva slot diário remoto. Falha com 429 se já usado hoje."""
+def pipeline_used_today(db: Session, comp_code: str) -> tuple[bool, PipelineRun | None]:
+    """Indica se o pipeline completo já rodou hoje para este campeonato."""
     run_day = today_run_day()
-    watch_token = secrets.token_urlsafe(32)
+    comp = comp_code or settings.world_cup_code
+    lock = (
+        db.query(RemotePipelineDaily)
+        .filter_by(run_day=run_day, comp_code=comp)
+        .one_or_none()
+    )
+    if lock is not None:
+        run = db.query(PipelineRun).filter(PipelineRun.id == lock.pipeline_run_id).one_or_none()
+        return True, run
+
+    run = (
+        db.query(PipelineRun)
+        .filter(PipelineRun.run_day == run_day, PipelineRun.comp_code == comp)
+        .order_by(PipelineRun.started_at.desc())
+        .first()
+    )
+    if run is not None:
+        return True, run
+
+    # Execuções web antigas (antes da trava) — leituras gravadas hoje neste campeonato
+    ctx = get_today_context()
+    has_analysis_today = (
+        db.query(FixtureReport.id)
+        .join(Fixture, FixtureReport.fixture_id == Fixture.id)
+        .filter(Fixture.competition_code == comp)
+        .filter(FixtureReport.analyzed_at >= ctx.start_utc)
+        .filter(FixtureReport.analyzed_at < ctx.end_utc)
+        .first()
+    )
+    if has_analysis_today:
+        return True, None
+
+    return False, None
+
+
+_DAILY_LIMIT_MSG = (
+    "Atualização completa já executada hoje para {comp} ({run_day}). "
+    "Só é permitido 1 vez por dia por campeonato."
+)
+
+
+def claim_daily_pipeline_run(
+    db: Session,
+    comp_code: str,
+    *,
+    trigger: str,
+) -> tuple[PipelineRun, str | None]:
+    """Reserva slot diário por campeonato (web ou remoto). Falha com 429 se já usado hoje."""
+    run_day = today_run_day()
+    comp = comp_code or settings.world_cup_code
+    used, _ = pipeline_used_today(db, comp)
+    if used:
+        raise HTTPException(
+            status_code=429,
+            detail=_DAILY_LIMIT_MSG.format(run_day=run_day, comp=comp),
+        )
+
+    watch_token = secrets.token_urlsafe(32) if trigger == "remote_api" else None
     run = PipelineRun(
         run_day=run_day,
-        trigger="remote_api",
+        trigger=trigger,
         status="running",
-        comp_code=comp_code,
-        watch_token_hash=hash_watch_token(watch_token),
+        comp_code=comp,
+        watch_token_hash=hash_watch_token(watch_token) if watch_token else None,
     )
     db.add(run)
     db.flush()
-    db.add(RemotePipelineDaily(run_day=run_day, pipeline_run_id=run.id))
+    db.add(RemotePipelineDaily(run_day=run_day, comp_code=comp, pipeline_run_id=run.id))
     try:
         db.commit()
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(
             status_code=429,
-            detail=f"Atualização remota já executada hoje ({run_day}). Só é permitido 1 disparo por dia.",
+            detail=_DAILY_LIMIT_MSG.format(run_day=run_day, comp=comp),
         ) from exc
     db.refresh(run)
+    return run, watch_token
+
+
+def claim_remote_daily_run(db: Session, comp_code: str) -> tuple[PipelineRun, str]:
+    """Reserva slot diário remoto. Falha com 429 se já usado hoje."""
+    run, watch_token = claim_daily_pipeline_run(db, comp_code, trigger="remote_api")
+    assert watch_token is not None
     return run, watch_token
 
 

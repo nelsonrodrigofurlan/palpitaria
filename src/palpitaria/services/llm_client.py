@@ -54,19 +54,95 @@ def resolve_model(model: str | None = None) -> str:
     return chosen
 
 
-def chat_completion(system: str, user: str, *, temperature: float = 0.4, max_tokens: int = 800) -> str:
+def chat_completion(
+    system: str,
+    user: str,
+    *,
+    temperature: float = 0.4,
+    max_tokens: int = 800,
+    feature: str = "general",
+) -> str:
     client = get_llm_client()
-    response = client.chat.completions.create(
-        model=resolve_model(),
-        temperature=temperature,
-        max_tokens=max_tokens,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-    )
-    content = response.choices[0].message.content
-    return content.strip() if content else ""
+    model = resolve_model()
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        content = response.choices[0].message.content or ""
+        _persist_usage_log(model=model, feature=feature, response=response)
+        return content.strip()
+    except Exception as exc:
+        _persist_usage_log(model=model, feature=feature, error=str(exc)[:300])
+        raise
+
+
+def _extract_usage(response) -> tuple[int, int, int, float | None, str | None]:
+    prompt = completion = total = 0
+    cost: float | None = None
+    generation_id = getattr(response, "id", None)
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        prompt = int(getattr(usage, "prompt_tokens", None) or 0)
+        completion = int(getattr(usage, "completion_tokens", None) or 0)
+        total = int(getattr(usage, "total_tokens", None) or prompt + completion)
+        raw_cost = getattr(usage, "cost", None)
+        if raw_cost is not None:
+            cost = float(raw_cost)
+    if cost is None and hasattr(response, "model_dump"):
+        dump = response.model_dump()
+        usage_dict = dump.get("usage") or {}
+        cost_val = usage_dict.get("cost")
+        if cost_val is not None:
+            cost = float(cost_val)
+        if not total:
+            prompt = int(usage_dict.get("prompt_tokens") or 0)
+            completion = int(usage_dict.get("completion_tokens") or 0)
+            total = int(usage_dict.get("total_tokens") or prompt + completion)
+    return prompt, completion, total, cost, generation_id
+
+
+def _persist_usage_log(
+    *,
+    model: str,
+    feature: str,
+    response=None,
+    error: str | None = None,
+) -> None:
+    try:
+        from palpitaria.database import SessionLocal
+        from palpitaria.models import LlmUsageLog
+
+        prompt = completion = total = 0
+        cost: float | None = None
+        generation_id: str | None = None
+        if response is not None:
+            prompt, completion, total, cost, generation_id = _extract_usage(response)
+
+        db = SessionLocal()
+        db.add(
+            LlmUsageLog(
+                provider="openrouter" if uses_openrouter() else settings.llm_provider_label,
+                model=model,
+                feature=feature,
+                prompt_tokens=prompt,
+                completion_tokens=completion,
+                total_tokens=total,
+                cost_usd=cost,
+                generation_id=generation_id,
+                success=error is None,
+                error_message=error,
+            )
+        )
+        db.commit()
+        db.close()
+    except Exception:
+        pass
 
 
 def llm_config_hint(error: Exception) -> str:

@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Custos — Admin{% endblock %}
+{% block content %}
+<header style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+  <div>
+    <p class="sub" style="font-size: 1rem; font-weight: 600; color: var(--blue); margin-bottom: 0.25rem;">Admin · FinOps</p>
+    <h1 style="font-size: 1.5rem; margin: 0;">💳 Extrato de Custos</h1>
+    <p class="sub" style="margin-top: 0.35rem;">Quanto o Palpitaria custa para ficar em pé — LLM, APIs e uso operacional</p>
+  </div>
+  <div style="font-size: 0.8rem; color: var(--muted); text-align: right;">
+    Atualizado: <strong>{{ fetched_at | kickoff(app_timezone) }}</strong><br>
+    Provedor LLM: <strong>{{ provider }}</strong>
+  </div>
+</header>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+  <div class="card" style="margin: 0; padding: 1.1rem; border-left: 4px solid #7c3aed;">
+    <span style="font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase;">Saldo / Limite (USD)</span>
+    <div style="font-size: 1.5rem; font-weight: 800; color: #7c3aed; margin-top: 0.25rem;">
+      {% if summary.balance_usd is not none %}
+        ${{ "%.4f"|format(summary.balance_usd) }}
+      {% else %}
+        —
+      {% endif %}
+    </div>
+    <span style="font-size: 0.75rem; color: var(--muted);">Créditos restantes na chave</span>
+  </div>
+  <div class="card" style="margin: 0; padding: 1.1rem; border-left: 4px solid var(--blue);">
+    <span style="font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase;">Gasto Hoje (USD)</span>
+    <div style="font-size: 1.5rem; font-weight: 800; color: var(--blue); margin-top: 0.25rem;">
+      ${{ "%.4f"|format(summary.spent_today_usd or 0) }}
+    </div>
+  </div>
+  <div class="card" style="margin: 0; padding: 1.1rem; border-left: 4px solid #b45309;">
+    <span style="font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase;">Gasto Mês (USD)</span>
+    <div style="font-size: 1.5rem; font-weight: 800; color: #b45309; margin-top: 0.25rem;">
+      ${{ "%.4f"|format(summary.spent_month_usd or 0) }}
+    </div>
+  </div>
+  <div class="card" style="margin: 0; padding: 1.1rem; border-left: 4px solid var(--green);">
+    <span style="font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase;">Gasto Total (USD)</span>
+    <div style="font-size: 1.5rem; font-weight: 800; color: var(--green); margin-top: 0.25rem;">
+      ${{ "%.4f"|format(summary.spent_total_usd or 0) }}
+    </div>
+    <span style="font-size: 0.75rem; color: var(--muted);">{{ pipelines_last_30d }} pipeline(s) em 30d</span>
+  </div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
+  <section class="card" style="margin: 0;">
+    <h2 style="margin: 0 0 1rem; font-size: 1.05rem;">🤖 OpenRouter</h2>
+    {% if openrouter.configured %}
+    <div style="display: grid; gap: 0.5rem; font-size: 0.9rem; margin-bottom: 1rem;">
+      <div><span style="color: var(--muted);">Chave:</span> <code>{{ openrouter.key_masked }}</code></div>
+      <div><span style="color: var(--muted);">Modelo:</span> <strong>{{ openrouter.model }}</strong></div>
+      {% if openrouter.key_info.ok %}
+      <div><span style="color: var(--muted);">Label:</span> {{ openrouter.key_info.label or '—' }}</div>
+      <div><span style="color: var(--muted);">Limite da chave:</span>
+        {% if openrouter.key_info.limit is not none %}${{ "%.2f"|format(openrouter.key_info.limit) }}{% else %}Ilimitado{% endif %}
+        {% if openrouter.key_info.limit_reset %} · reset {{ openrouter.key_info.limit_reset }}{% endif %}
+      </div>
+      <div><span style="color: var(--muted);">Uso semanal:</span> ${{ "%.4f"|format(openrouter.key_info.usage_weekly or 0) }}</div>
+      {% if openrouter.key_info.is_free_tier %}
+      <span class="badge" style="background: #fef3c7; color: #92400e;">Free tier</span>
+      {% endif %}
+      {% else %}
+      <div class="alert" style="margin: 0;">⚠️ {{ openrouter.key_info.error }}</div>
+      {% endif %}
+    </div>
+
+    {% if openrouter.credits.ok %}
+    <div style="background: #f8fafc; border-radius: 10px; padding: 0.85rem; font-size: 0.85rem; margin-bottom: 1rem;">
+      <strong>Conta (Management API)</strong><br>
+      Comprado: ${{ "%.2f"|format(openrouter.credits.total_credits) }} ·
+      Usado: ${{ "%.4f"|format(openrouter.credits.total_usage) }} ·
+      Restante: ${{ "%.4f"|format(openrouter.credits.remaining) }}
+    </div>
+    {% elif openrouter.credits.error %}
+    <p style="font-size: 0.8rem; color: var(--muted); margin: 0 0 1rem;">
+      Extrato completo da conta: {{ openrouter.credits.error }}
+    </p>
+    {% endif %}
+    {% else %}
+    <p class="sub">LLM não configurado via OpenRouter.</p>
+    {% endif %}
+  </section>
+
+  <section class="card" style="margin: 0;">
+    <h2 style="margin: 0 0 1rem; font-size: 1.05rem;">🧩 Infraestrutura</h2>
+    <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+      <thead>
+        <tr style="text-align: left; border-bottom: 2px solid #f1f5f9;">
+          <th style="padding: 0.5rem 0;">Serviço</th>
+          <th>Status</th>
+          <th>Cobrança</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in infra %}
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 0.65rem 0;">
+            <strong>{{ item.name }}</strong><br>
+            <span style="color: var(--muted); font-size: 0.75rem;">{{ item.note }}</span>
+          </td>
+          <td>
+            <span class="badge {% if item.configured %}ok{% else %}err{% endif %}">
+              {{ 'Ativo' if item.configured else 'Off' }}
+            </span>
+          </td>
+          <td style="font-size: 0.75rem; color: var(--muted);">{{ item.billing }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+{% if openrouter.activity.ok and openrouter.activity.daily %}
+<section class="card" style="margin-bottom: 1.5rem;">
+  <h2 style="margin: 0 0 0.35rem; font-size: 1.05rem;">📅 Extrato OpenRouter — últimos 30 dias (UTC)</h2>
+  <p class="sub" style="margin: 0 0 1rem;">Total no período: <strong>${{ "%.4f"|format(openrouter.activity.total_usd) }}</strong></p>
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Data (UTC)</th>
+          <th>Requisições</th>
+          <th>Tokens (in/out)</th>
+          <th>Custo (USD)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in openrouter.activity.daily %}
+        <tr>
+          <td>{{ row.date }}</td>
+          <td>{{ row.requests }}</td>
+          <td>{{ row.prompt_tokens }} / {{ row.completion_tokens }}</td>
+          <td class="{% if row.usage_usd > 0 %}fail{% endif %}">${{ "%.6f"|format(row.usage_usd) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% elif openrouter.configured and openrouter.activity.error %}
+<div class="alert" style="margin-bottom: 1.5rem;">
+  Extrato diário OpenRouter indisponível: {{ openrouter.activity.error }}
+  <br><span style="font-size: 0.85rem;">Use uma <a href="https://openrouter.ai/docs/guides/overview/auth/management-api-keys" target="_blank" rel="noopener">Management API Key</a> para ver o histórico completo de 30 dias.</span>
+</div>
+{% endif %}
+
+<section class="card">
+  <h2 style="margin: 0 0 0.35rem; font-size: 1.05rem;">📋 Log local de chamadas LLM</h2>
+  {% if local.has_logs %}
+  <p class="sub" style="margin: 0 0 1rem;">
+    {{ local.total_calls }} chamadas registradas · {{ local.tokens_total }} tokens ·
+    custo rastreado: <strong>${{ "%.4f"|format(local.cost_total_usd) }}</strong>
+  </p>
+  {% if local.by_feature %}
+  <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem;">
+    {% for f in local.by_feature %}
+    <span class="badge" style="background: #ede9fe; color: #5b21b6;">
+      {{ f.feature }}: {{ f.calls }}x · ${{ "%.4f"|format(f.cost_usd) }}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Quando</th>
+          <th>Feature</th>
+          <th>Modelo</th>
+          <th>Tokens</th>
+          <th>USD</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in local.recent %}
+        <tr>
+          <td style="font-size: 0.8rem;">{{ log.created_at | kickoff(app_timezone) }}</td>
+          <td><code>{{ log.feature }}</code></td>
+          <td style="font-size: 0.75rem;">{{ log.model }}</td>
+          <td>{{ log.total_tokens }}</td>
+          <td>{% if log.cost_usd is not none %}${{ "%.6f"|format(log.cost_usd) }}{% else %}—{% endif %}</td>
+          <td>
+            <span class="badge {% if log.success %}ok{% else %}err{% endif %}">
+              {{ 'OK' if log.success else 'ERRO' }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="sub" style="margin: 0;">
+    Nenhuma chamada registrada ainda nesta versão.
+    {% if local.legacy_llm_reports > 0 %}
+    Há <strong>{{ local.legacy_llm_reports }}</strong> leituras LLM históricas (antes do log de custos).
+    {% endif %}
+    A partir de agora, cada chamada ao modelo grava tokens e custo aqui.
+  </p>
+  {% endif %}
+</section>
+
+<p style="margin-top: 1.5rem; font-size: 0.8rem; color: var(--muted); text-align: center;">
+  Valores em USD (OpenRouter). Comissão Betfair e P&L real estão em <a href="/branches">Filiais</a> e <a href="/graficos">Gráficos</a>.
+</p>
+{% endblock %}
