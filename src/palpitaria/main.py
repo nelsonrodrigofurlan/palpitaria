@@ -37,9 +37,11 @@ from palpitaria.services.ai_tracker import (
     backfill_from_fixture_reports,
     build_month_options,
     compute_split_stats,
+    ensure_ia_history_from_reports,
     filter_recommendations_by_month,
     market_rows_from_stats,
     parse_month_param,
+    prune_discarded_pending_recommendations,
     resolve_pending_recommendations,
     rows_for_scope,
 )
@@ -718,8 +720,15 @@ def list_branches(request: Request, comp: str | None = None, db: Session = Depen
     else:
         comp_code = comp
 
-    # Filtrar filiais do usuário
-    branches = db.query(Branch).filter(Branch.user_id == user.id).all()
+    def _branches_for_user() -> list:
+        return (
+            db.query(Branch)
+            .filter(Branch.user_id == user.id)
+            .order_by(func.lower(Branch.name))
+            .all()
+        )
+
+    branches = _branches_for_user()
     
     # If no branches exist for this user, create defaults
     if not branches:
@@ -727,7 +736,7 @@ def list_branches(request: Request, comp: str | None = None, db: Session = Depen
         over15 = Branch(name="Over 1.5 Goals", slug=f"over_1_5_{user.id}", description="Mercado de pelo menos 2 gols", user_id=user.id)
         db.add_all([over05, over15])
         db.commit()
-        branches = db.query(Branch).filter(Branch.user_id == user.id).all()
+        branches = _branches_for_user()
 
     # Calculate P&L summary for each branch
     stats = {}
@@ -825,6 +834,8 @@ def list_historico(request: Request, db: Session = Depends(get_db), user=Depends
         
         rows.append({
             "period": period_label(cy, cm),
+            "year": cy,
+            "month": cm,
             "branch_name": b.name,
             "bet_count": bet_count,
             "win_count": wins,
@@ -868,6 +879,8 @@ def list_historico(request: Request, db: Session = Depends(get_db), user=Depends
         comp_label = ", ".join(sorted(d["comp_codes"]))
         rows.append({
             "period": period_label(key[0], key[1]),
+            "year": key[0],
+            "month": key[1],
             "branch_name": d["branch_name"],
             "bet_count": d["bet_count"],
             "win_count": d["win_count"],
@@ -881,6 +894,15 @@ def list_historico(request: Request, db: Session = Depends(get_db), user=Depends
             "is_active": False,
             "side": d["side"]
         })
+
+    rows.sort(
+        key=lambda r: (
+            0 if r.get("is_active") else 1,
+            -r.get("year", 0),
+            -r.get("month", 0),
+            (r.get("branch_name") or "").lower(),
+        )
+    )
 
     # Calcular somas gerais
     current_month_pl = sum(r["total_pl"] for r in rows if r.get("is_active"))
@@ -897,6 +919,35 @@ def list_historico(request: Request, db: Session = Depends(get_db), user=Depends
             "current_month_pl": current_month_pl,
             "total_history_pl": total_history_pl,
         }
+    )
+
+
+@app.get("/graficos", response_class=HTMLResponse)
+def list_graficos(
+    request: Request,
+    comp: str | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(login_required),
+):
+    from palpitaria.models import Competition
+    from palpitaria.services.analytics import build_dashboard_payload
+
+    close_past_months(db)
+    active_comps = db.query(Competition).filter_by(is_active=True).all()
+    comp_code = comp or None
+
+    payload = build_dashboard_payload(db, user.id, comp_code=comp_code)
+
+    return TEMPLATES.TemplateResponse(
+        request,
+        "graficos.html",
+        {
+            "chart_json": json.dumps(payload, ensure_ascii=False),
+            "meta": payload["meta"],
+            "active_comps": active_comps,
+            "current_comp": comp_code,
+            "user": user,
+        },
     )
 
 
@@ -945,10 +996,11 @@ def list_ia_historico(
 ):
     from palpitaria.models import AiRecommendation, Competition
 
-    resolve_pending_recommendations(db, comp)
-
     active_comps = db.query(Competition).filter_by(is_active=True).all()
-    comp_code = comp or (active_comps[0].code if active_comps else "WC")
+    comp_code = comp or user.favorite_comp_code or (active_comps[0].code if active_comps else "WC")
+
+    resolve_pending_recommendations(db, comp_code)
+    prune_discarded_pending_recommendations(db, comp_code)
 
     query = db.query(AiRecommendation).order_by(AiRecommendation.analyzed_at.desc())
     if comp_code:
@@ -960,6 +1012,16 @@ def list_ia_historico(
     selected_mes = f"{year}-{month:02d}"
     selected_period = period_label(year, month)
 
+    filtered = filter_recommendations_by_month(all_recommendations, year, month)
+    ensure_ia_history_from_reports(db, comp_code, year, month)
+    # Recarregar após possível backfill
+    all_recommendations = (
+        db.query(AiRecommendation)
+        .filter(AiRecommendation.competition_code == comp_code)
+        .order_by(AiRecommendation.analyzed_at.desc())
+        .limit(500)
+        .all()
+    )
     filtered = filter_recommendations_by_month(all_recommendations, year, month)
     split = compute_split_stats(filtered)
 
@@ -981,6 +1043,7 @@ def list_ia_historico(
             "app_timezone": settings.app_timezone,
             "active_comps": active_comps,
             "current_comp": comp_code,
+            "user": user,
         },
     )
 

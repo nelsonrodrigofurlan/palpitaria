@@ -91,9 +91,6 @@ def record_ai_recommendation(
 ) -> AiRecommendation | None:
     """Grava snapshot da recomendação (uma por jogo por dia; re-run no mesmo dia atualiza)."""
     pick = analysis.best_pick
-    if not pick or not pick.get("market"):
-        return None
-
     now = datetime.utcnow()
     today = analysis_local_date(now)
 
@@ -105,6 +102,15 @@ def record_ai_recommendation(
     )
     rec = next((r for r in existing if analysis_local_date(r.analyzed_at) == today), None)
 
+    if not pick or not pick.get("market"):
+        if rec:
+            fixture = db.get(Fixture, analysis.fixture_id)
+            if fixture and fixture.status == "FINISHED":
+                return rec
+            db.delete(rec)
+            db.flush()
+        return None
+
     payload = {
         "competition_code": competition_code,
         "match_label": f"{analysis.home_name} x {analysis.away_name}",
@@ -115,17 +121,28 @@ def record_ai_recommendation(
         "scope": pick.get("scope", "alternate" if analysis.excluded else "goals"),
         "excluded": analysis.excluded,
         "goal_potential_score": analysis.goal_potential_score,
-        "outcome": "PENDING",
-        "final_home_score": None,
-        "final_away_score": None,
-        "resolved_at": None,
     }
 
     if rec:
+        fixture = db.get(Fixture, analysis.fixture_id)
+        if fixture and fixture.status == "FINISHED":
+            return rec
         for key, value in payload.items():
             setattr(rec, key, value)
+        if rec.outcome not in ("HIT", "MISS"):
+            rec.outcome = "PENDING"
+            rec.final_home_score = None
+            rec.final_away_score = None
+            rec.resolved_at = None
     else:
-        rec = AiRecommendation(fixture_id=analysis.fixture_id, **payload)
+        rec = AiRecommendation(
+            fixture_id=analysis.fixture_id,
+            outcome="PENDING",
+            final_home_score=None,
+            final_away_score=None,
+            resolved_at=None,
+            **payload,
+        )
         db.add(rec)
 
     db.flush()
@@ -265,11 +282,128 @@ def compute_accuracy_stats(
 
 
 def compute_split_stats(recommendations: list[AiRecommendation]) -> dict:
-    """Separa métricas: homologadas (candidatos) vs alternativas."""
+    """Separa métricas: homologadas (candidatos) vs alternativas — snapshot gravado."""
     return {
         "homologated": compute_accuracy_stats(recommendations, homologated_only=True),
         "alternate": compute_accuracy_stats(recommendations, homologated_only=False),
     }
+
+
+def ensure_ia_history_from_reports(
+    db: Session,
+    comp_code: str,
+    year: int,
+    month: int,
+) -> int:
+    """Garante registro no histórico a partir do snapshot da análise (fixture_reports).
+
+    Só adiciona jogos finalizados — pendentes seguem a lógica live (podem ser descartados).
+    """
+    reports = (
+        db.query(FixtureReport)
+        .join(Fixture, FixtureReport.fixture_id == Fixture.id)
+        .filter(Fixture.competition_code == comp_code)
+        .filter(FixtureReport.best_pick_json.isnot(None))
+        .all()
+    )
+    touched = 0
+    for report in reports:
+        if not report.analyzed_at:
+            continue
+        d = analysis_local_date(report.analyzed_at)
+        if d.year != year or d.month != month:
+            continue
+        try:
+            pick = json.loads(report.best_pick_json or "{}")
+        except json.JSONDecodeError:
+            continue
+        if not pick.get("market"):
+            continue
+
+        fixture = (
+            db.query(Fixture)
+            .options(joinedload(Fixture.home_team), joinedload(Fixture.away_team))
+            .filter_by(id=report.fixture_id)
+            .one_or_none()
+        )
+        if not fixture or not fixture.home_team or not fixture.away_team:
+            continue
+
+        if fixture.status != "FINISHED":
+            continue
+
+        home_name = fixture.home_team.name
+        away_name = fixture.away_team.name
+        outcome = _outcome_for_fixture(fixture, pick["market"], home_name, away_name)
+        rec = db.query(AiRecommendation).filter_by(fixture_id=report.fixture_id).first()
+
+        if rec:
+            if fixture.status == "FINISHED" and rec.market != pick["market"]:
+                rec.market = pick["market"]
+                rec.verdict = pick.get("verdict", rec.verdict)
+                rec.reason = pick.get("reason")
+                rec.scope = pick.get("scope", rec.scope)
+                rec.excluded = report.excluded
+                rec.goal_potential_score = report.goal_potential_score
+                rec.outcome = outcome
+                rec.final_home_score = fixture.home_score if outcome in ("HIT", "MISS") else None
+                rec.final_away_score = fixture.away_score if outcome in ("HIT", "MISS") else None
+                rec.resolved_at = datetime.utcnow() if outcome in ("HIT", "MISS") else None
+                touched += 1
+            continue
+
+        rec = AiRecommendation(
+            fixture_id=fixture.id,
+            competition_code=comp_code,
+            match_label=f"{home_name} x {away_name}",
+            analyzed_at=report.analyzed_at,
+            market=pick.get("market", ""),
+            verdict=pick.get("verdict", "CANDIDATE"),
+            reason=pick.get("reason"),
+            scope=pick.get("scope", "alternate" if report.excluded else "goals"),
+            excluded=report.excluded,
+            goal_potential_score=report.goal_potential_score,
+            outcome=outcome,
+            final_home_score=fixture.home_score if outcome in ("HIT", "MISS") else None,
+            final_away_score=fixture.away_score if outcome in ("HIT", "MISS") else None,
+            resolved_at=datetime.utcnow() if outcome in ("HIT", "MISS") else None,
+        )
+        db.add(rec)
+        touched += 1
+
+    if touched:
+        db.commit()
+    return touched
+
+
+def prune_discarded_pending_recommendations(db: Session, comp_code: str) -> int:
+    """Remove recomendações pendentes de jogos ainda não finalizados que a lógica atual descartaria."""
+    from palpitaria.services.analyzer import analyze_fixture
+
+    pending = (
+        db.query(AiRecommendation)
+        .join(Fixture, AiRecommendation.fixture_id == Fixture.id)
+        .filter(AiRecommendation.competition_code == comp_code)
+        .filter(AiRecommendation.outcome == "PENDING")
+        .filter(Fixture.status != "FINISHED")
+        .all()
+    )
+    removed = 0
+    for rec in pending:
+        fixture = rec.fixture or db.get(Fixture, rec.fixture_id)
+        if not fixture:
+            db.delete(rec)
+            removed += 1
+            continue
+        analysis = analyze_fixture(db, fixture)
+        if analysis.best_pick and analysis.best_pick.get("market"):
+            continue
+        db.delete(rec)
+        removed += 1
+
+    if removed:
+        db.commit()
+    return removed
 
 
 def filter_recommendations_by_month(
@@ -357,6 +491,19 @@ def _row_from_rec(rec: AiRecommendation) -> dict:
     }
 
 
+def _outcome_for_fixture(fixture: Fixture, market: str, home_name: str, away_name: str) -> str:
+    if fixture.status != "FINISHED" or fixture.home_score is None or fixture.away_score is None:
+        return "PENDING"
+    return evaluate_market(
+        market,
+        home_name=home_name,
+        away_name=away_name,
+        home_score=fixture.home_score,
+        away_score=fixture.away_score,
+    )
+
+
 def rows_for_scope(recommendations: list[AiRecommendation], *, homologated: bool) -> list[dict]:
+    """Lista entradas do snapshot gravado na análise — histórico imutável."""
     pool = [r for r in recommendations if r.excluded != homologated]
     return [_row_from_rec(r) for r in _latest_per_fixture(pool)]

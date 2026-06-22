@@ -1,0 +1,757 @@
+{% extends "base.html" %}
+{% block title %}Gráficos — Palpitaria FC{% endblock %}
+{% block content %}
+<header class="charts-header">
+  <div>
+    <h1>📊 Analytics Dashboard</h1>
+    <p class="sub">P&L real, performance IA e evolução da banca — visão analítica consolidada</p>
+  </div>
+  <div class="charts-filters">
+    <label for="comp-filter">Campeonato</label>
+    <select id="comp-filter" onchange="applyCompFilter(this.value)">
+      <option value="" {% if not current_comp %}selected{% endif %}>Todos</option>
+      {% for comp in active_comps %}
+      <option value="{{ comp.code }}" {% if current_comp == comp.code %}selected{% endif %}>{{ comp.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</header>
+
+<div class="charts-kpi-grid">
+  <div class="charts-kpi charts-kpi--pl">
+    <span class="charts-kpi-label">P&L Real Acumulado</span>
+    <strong class="charts-kpi-value" id="kpi-pl-total">—</strong>
+    <span class="charts-kpi-meta">Apostas reais · filiais</span>
+  </div>
+  <div class="charts-kpi charts-kpi--bank">
+    <span class="charts-kpi-label">Saldo (Banca)</span>
+    <strong class="charts-kpi-value" id="kpi-bankroll">—</strong>
+    <span class="charts-kpi-meta">Depósitos − saques + P&L</span>
+  </div>
+  <div class="charts-kpi charts-kpi--ia">
+    <span class="charts-kpi-label">Acerto IA</span>
+    <strong class="charts-kpi-value" id="kpi-ia-rate">—</strong>
+    <span class="charts-kpi-meta" id="kpi-ia-meta">Homologadas + alternativas</span>
+  </div>
+  <div class="charts-kpi charts-kpi--ops">
+    <span class="charts-kpi-label">Operações</span>
+    <strong class="charts-kpi-value" id="kpi-ops">—</strong>
+    <span class="charts-kpi-meta" id="kpi-ops-meta">Greens · reds · pendentes</span>
+  </div>
+</div>
+
+<nav class="charts-tabs" role="tablist">
+  <button type="button" class="charts-tab active" data-panel="overview" role="tab">Visão Geral</button>
+  <button type="button" class="charts-tab" data-panel="pl" role="tab">P&L Real</button>
+  <button type="button" class="charts-tab" data-panel="ia" role="tab">Performance IA</button>
+</nav>
+
+<section class="charts-panel active" id="panel-overview">
+  <div class="charts-grid">
+    <article class="charts-card charts-card--wide">
+      <div class="charts-card-head">
+        <h2>Curva de Equity — P&L cumulativo</h2>
+        <p>Evolução do resultado após cada aposta fechada</p>
+      </div>
+      <div class="charts-canvas-wrap"><canvas id="chart-equity"></canvas></div>
+    </article>
+    <article class="charts-card charts-card--wide">
+      <div class="charts-card-head">
+        <h2>Evolução da Banca</h2>
+        <p>Saldo real ao longo das operações</p>
+      </div>
+      <div class="charts-canvas-wrap"><canvas id="chart-bankroll"></canvas></div>
+    </article>
+    <article class="charts-card">
+      <div class="charts-card-head">
+        <h2>P&L vs Acerto IA</h2>
+        <p>Comparativo por escopo de recomendação</p>
+      </div>
+      <div class="charts-canvas-wrap charts-canvas-wrap--short"><canvas id="chart-compare"></canvas></div>
+    </article>
+    <article class="charts-card">
+      <div class="charts-card-head">
+        <h2>Resultado Real</h2>
+        <p>Distribuição greens / reds</p>
+      </div>
+      <div class="charts-canvas-wrap charts-canvas-wrap--short"><canvas id="chart-pl-outcomes"></canvas></div>
+    </article>
+  </div>
+</section>
+
+<section class="charts-panel" id="panel-pl">
+  <div class="charts-grid">
+    <article class="charts-card charts-card--wide">
+      <div class="charts-card-head">
+        <h2>P&L Mensal</h2>
+        <p>Fechamentos arquivados + mês corrente on-line</p>
+      </div>
+      <div class="charts-canvas-wrap"><canvas id="chart-monthly-pl"></canvas></div>
+    </article>
+    <article class="charts-card charts-card--wide">
+      <div class="charts-card-head">
+        <h2>P&L Diário</h2>
+        <p>Resultado por dia de operação</p>
+      </div>
+      <div class="charts-canvas-wrap"><canvas id="chart-daily-pl"></canvas></div>
+    </article>
+    <article class="charts-card charts-card--wide">
+      <div class="charts-card-head">
+        <h2>P&L por Filial</h2>
+        <p>Contribuição de cada unidade de negócio</p>
+      </div>
+      <div class="charts-canvas-wrap"><canvas id="chart-branch-pl"></canvas></div>
+    </article>
+    <article class="charts-card">
+      <div class="charts-card-head">
+        <h2>Taxa de Acerto por Filial</h2>
+        <p>% greens sobre entradas fechadas</p>
+      </div>
+      <div class="charts-canvas-wrap charts-canvas-wrap--tall"><canvas id="chart-branch-rate"></canvas></div>
+    </article>
+    <article class="charts-card">
+      <div class="charts-card-head">
+        <h2>Volume vs Resultado</h2>
+        <p>Stake total e P&L por filial</p>
+      </div>
+      <div class="charts-canvas-wrap charts-canvas-wrap--tall"><canvas id="chart-branch-mix"></canvas></div>
+    </article>
+  </div>
+</section>
+
+<section class="charts-panel" id="panel-ia">
+  <div class="charts-grid">
+    <article class="charts-card charts-card--wide">
+      <div class="charts-card-head">
+        <h2>Curva de Acerto IA (cumulativa)</h2>
+        <p>% de hits ao longo das recomendações resolvidas</p>
+      </div>
+      <div class="charts-canvas-wrap"><canvas id="chart-ia-cumulative"></canvas></div>
+    </article>
+    <article class="charts-card charts-card--wide">
+      <div class="charts-card-head">
+        <h2>Performance Mensal IA</h2>
+        <p>Hits vs misses por mês</p>
+      </div>
+      <div class="charts-canvas-wrap"><canvas id="chart-ia-monthly"></canvas></div>
+    </article>
+    <article class="charts-card">
+      <div class="charts-card-head">
+        <h2>Homologadas vs Alternativas</h2>
+        <p>Composição de acertos por escopo</p>
+      </div>
+      <div class="charts-canvas-wrap charts-canvas-wrap--short"><canvas id="chart-ia-scope"></canvas></div>
+    </article>
+    <article class="charts-card">
+      <div class="charts-card-head">
+        <h2>Resultado IA</h2>
+        <p>Hits · misses · pendentes</p>
+      </div>
+      <div class="charts-canvas-wrap charts-canvas-wrap--short"><canvas id="chart-ia-outcomes"></canvas></div>
+    </article>
+    <article class="charts-card charts-card--wide">
+      <div class="charts-card-head">
+        <h2>Acerto por Mercado (IA)</h2>
+        <p>Taxa de acerto agrupada por tipo de mercado</p>
+      </div>
+      <div class="charts-canvas-wrap"><canvas id="chart-ia-market"></canvas></div>
+    </article>
+  </div>
+</section>
+
+<p class="charts-footnote">
+  Período de referência: <strong>{{ meta.current_period }}</strong>
+  {% if current_comp %} · Filtro: <strong>{{ current_comp }}</strong>{% else %} · Todos os campeonatos{% endif %}
+  · Dados gerados em tempo real a partir de <a href="/branches">Filiais</a> e <a href="/ia-historico">Histórico IA</a>.
+</p>
+
+<style>
+  .charts-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .charts-filters {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    background: white;
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    box-shadow: var(--shadow);
+  }
+  .charts-filters label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  .charts-filters select {
+    border: none;
+    background: transparent;
+    font-weight: 700;
+    color: var(--blue);
+    font-size: 0.95rem;
+    cursor: pointer;
+    outline: none;
+  }
+  .charts-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .charts-kpi {
+    background: white;
+    border-radius: 14px;
+    padding: 1.1rem 1.25rem;
+    border: 1px solid #e2e8f0;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .charts-kpi-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .charts-kpi-value {
+    font-size: 1.65rem;
+    font-weight: 800;
+    line-height: 1.1;
+  }
+  .charts-kpi-meta {
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .charts-kpi--pl { border-left: 4px solid var(--blue); }
+  .charts-kpi--pl .charts-kpi-value { color: var(--blue); }
+  .charts-kpi--bank { border-left: 4px solid #b45309; background: #fffbeb; }
+  .charts-kpi--bank .charts-kpi-value { color: #b45309; }
+  .charts-kpi--ia { border-left: 4px solid #7c3aed; }
+  .charts-kpi--ia .charts-kpi-value { color: #7c3aed; }
+  .charts-kpi--ops { border-left: 4px solid var(--green); }
+  .charts-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+  }
+  .charts-tab {
+    border: 1px solid #e2e8f0;
+    background: white;
+    color: var(--muted);
+    padding: 0.55rem 1.15rem;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .charts-tab:hover { border-color: var(--blue); color: var(--blue); }
+  .charts-tab.active {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: white;
+  }
+  .charts-panel { display: none; }
+  .charts-panel.active { display: block; }
+  .charts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+  @media (max-width: 960px) {
+    .charts-grid { grid-template-columns: 1fr; }
+  }
+  .charts-card {
+    background: white;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    box-shadow: var(--shadow);
+    padding: 1.25rem;
+    min-width: 0;
+  }
+  .charts-card--wide { grid-column: 1 / -1; }
+  .charts-card-head h2 {
+    margin: 0 0 0.2rem;
+    font-size: 1rem;
+    font-weight: 800;
+  }
+  .charts-card-head p {
+    margin: 0 0 1rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .charts-canvas-wrap {
+    position: relative;
+    height: 280px;
+  }
+  .charts-canvas-wrap--short { height: 240px; }
+  .charts-canvas-wrap--tall { height: 320px; }
+  .charts-footnote {
+    margin-top: 2rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-align: center;
+  }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+  const DASHBOARD = {{ chart_json | safe }};
+
+  const COLORS = {
+    green: '#22c55e',
+    greenSoft: 'rgba(34, 197, 94, 0.15)',
+    red: '#ef4444',
+    redSoft: 'rgba(239, 68, 68, 0.15)',
+    blue: '#2563eb',
+    blueSoft: 'rgba(37, 99, 235, 0.12)',
+    purple: '#7c3aed',
+    purpleSoft: 'rgba(124, 58, 237, 0.12)',
+    amber: '#eab308',
+    slate: '#64748b',
+    grid: 'rgba(100, 116, 139, 0.12)',
+  };
+
+  const charts = {};
+
+  function fmtBRL(v) {
+    const n = Number(v) || 0;
+    const sign = n >= 0 ? '+' : '';
+    return sign + 'R$ ' + n.toFixed(2).replace('.', ',');
+  }
+
+  function fmtPct(v) {
+    if (v === null || v === undefined) return '—';
+    return Number(v).toFixed(0) + '%';
+  }
+
+  function plColor(v) {
+    return Number(v) >= 0 ? COLORS.green : COLORS.red;
+  }
+
+  function barColors(values) {
+    return values.map(v => Number(v) >= 0 ? COLORS.green : COLORS.red);
+  }
+
+  function baseOptions(extra = {}) {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          labels: { font: { weight: '600', size: 11 }, color: COLORS.slate, boxWidth: 12 },
+        },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          padding: 12,
+          cornerRadius: 8,
+          titleFont: { weight: '700' },
+        },
+      },
+      scales: {
+        x: {
+          grid: { color: COLORS.grid },
+          ticks: { color: COLORS.slate, font: { size: 10, weight: '600' }, maxRotation: 45 },
+        },
+        y: {
+          grid: { color: COLORS.grid },
+          ticks: { color: COLORS.slate, font: { size: 10, weight: '600' } },
+        },
+      },
+      ...extra,
+    };
+  }
+
+  function destroyChart(id) {
+    if (charts[id]) {
+      charts[id].destroy();
+      delete charts[id];
+    }
+  }
+
+  function applyCompFilter(comp) {
+    const url = comp ? '/graficos?comp=' + encodeURIComponent(comp) : '/graficos';
+    window.location.href = url;
+  }
+
+  function initKpis() {
+    const pl = DASHBOARD.pl.kpis;
+    const ia = DASHBOARD.ia.kpis;
+    document.getElementById('kpi-pl-total').textContent = fmtBRL(pl.total_pl);
+    document.getElementById('kpi-pl-total').style.color = plColor(pl.total_pl);
+    document.getElementById('kpi-bankroll').textContent = 'R$ ' + pl.bankroll.toFixed(2).replace('.', ',');
+    document.getElementById('kpi-ia-rate').textContent = fmtPct(ia.hit_rate);
+    document.getElementById('kpi-ia-meta').textContent =
+      'Hom ' + fmtPct(ia.homologated_hit_rate) + ' · Alt ' + fmtPct(ia.alternate_hit_rate);
+    document.getElementById('kpi-ops').textContent = pl.wins + 'G / ' + pl.losses + 'R';
+    document.getElementById('kpi-ops-meta').textContent =
+      'Stake R$ ' + pl.total_stake.toFixed(0) + ' · ' + pl.pending + ' pendente(s)';
+  }
+
+  function initTabs() {
+    document.querySelectorAll('.charts-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.charts-tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.charts-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('panel-' + btn.dataset.panel).classList.add('active');
+        window.dispatchEvent(new Event('resize'));
+      });
+    });
+  }
+
+  function initOverviewCharts() {
+    const pl = DASHBOARD.pl;
+    const ia = DASHBOARD.ia;
+
+    destroyChart('equity');
+    charts.equity = new Chart(document.getElementById('chart-equity'), {
+      type: 'line',
+      data: {
+        labels: pl.equity_curve.labels,
+        datasets: [{
+          label: 'P&L Acumulado (R$)',
+          data: pl.equity_curve.values,
+          borderColor: COLORS.blue,
+          backgroundColor: COLORS.blueSoft,
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          borderWidth: 2.5,
+        }],
+      },
+      options: baseOptions({
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => fmtBRL(ctx.parsed.y) } },
+        },
+        scales: {
+          y: {
+            grid: { color: COLORS.grid },
+            ticks: { callback: v => 'R$ ' + v, color: COLORS.slate },
+          },
+        },
+      }),
+    });
+
+    destroyChart('bankroll');
+    charts.bankroll = new Chart(document.getElementById('chart-bankroll'), {
+      type: 'line',
+      data: {
+        labels: pl.bankroll.labels,
+        datasets: [{
+          label: 'Saldo (R$)',
+          data: pl.bankroll.values,
+          borderColor: '#b45309',
+          backgroundColor: 'rgba(180, 83, 9, 0.1)',
+          fill: true,
+          tension: 0.25,
+          pointRadius: 2,
+          borderWidth: 2.5,
+        }],
+      },
+      options: baseOptions({
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => 'R$ ' + ctx.parsed.y.toFixed(2) } },
+        },
+        scales: {
+          y: {
+            ticks: { callback: v => 'R$ ' + v, color: COLORS.slate },
+          },
+        },
+      }),
+    });
+
+    destroyChart('compare');
+    const realScope = pl.real_by_scope;
+    charts.compare = new Chart(document.getElementById('chart-compare'), {
+      type: 'bar',
+      data: {
+        labels: ['Homologadas / Gols', 'Alternativas / 1X2·CS'],
+        datasets: [
+          {
+            label: '% Acerto IA',
+            data: ia.scope.hit_rate,
+            backgroundColor: COLORS.purple,
+            borderRadius: 8,
+            yAxisID: 'y',
+          },
+          {
+            label: '% Acerto Real (P&L)',
+            data: realScope.hit_rate,
+            backgroundColor: COLORS.blue,
+            borderRadius: 8,
+            yAxisID: 'y',
+          },
+          {
+            label: 'P&L Real (R$)',
+            data: realScope.pl,
+            type: 'line',
+            borderColor: COLORS.green,
+            backgroundColor: COLORS.green,
+            yAxisID: 'y1',
+            tension: 0.3,
+            pointRadius: 5,
+            borderWidth: 2,
+          },
+        ],
+      },
+      options: baseOptions({
+        scales: {
+          y: {
+            position: 'left',
+            min: 0,
+            max: 100,
+            ticks: { callback: v => v + '%' },
+            title: { display: true, text: 'Taxa de acerto', color: COLORS.slate },
+          },
+          y1: {
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            ticks: { callback: v => 'R$ ' + v },
+            title: { display: true, text: 'P&L', color: COLORS.slate },
+          },
+        },
+      }),
+    });
+
+    destroyChart('plOutcomes');
+    charts.plOutcomes = new Chart(document.getElementById('chart-pl-outcomes'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Greens', 'Reds', 'Pendentes'],
+        datasets: [{
+          data: [pl.outcomes.wins, pl.outcomes.losses, pl.outcomes.pending],
+          backgroundColor: [COLORS.green, COLORS.red, COLORS.slate],
+          borderWidth: 0,
+          hoverOffset: 8,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+          legend: { position: 'bottom', labels: { font: { weight: '600' } } },
+        },
+      },
+    });
+  }
+
+  function initPlCharts() {
+    const pl = DASHBOARD.pl;
+
+    destroyChart('monthlyPl');
+    charts.monthlyPl = new Chart(document.getElementById('chart-monthly-pl'), {
+      type: 'bar',
+      data: {
+        labels: pl.monthly_pl.labels,
+        datasets: [{
+          label: 'P&L Mensal (R$)',
+          data: pl.monthly_pl.values,
+          backgroundColor: barColors(pl.monthly_pl.values),
+          borderRadius: 8,
+        }],
+      },
+      options: baseOptions({
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtBRL(ctx.parsed.y) } } },
+        scales: { y: { ticks: { callback: v => 'R$ ' + v } } },
+      }),
+    });
+
+    destroyChart('dailyPl');
+    charts.dailyPl = new Chart(document.getElementById('chart-daily-pl'), {
+      type: 'bar',
+      data: {
+        labels: pl.daily_pl.labels,
+        datasets: [{
+          label: 'P&L Diário (R$)',
+          data: pl.daily_pl.values,
+          backgroundColor: barColors(pl.daily_pl.values),
+          borderRadius: 6,
+        }],
+      },
+      options: baseOptions({
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtBRL(ctx.parsed.y) } } },
+        scales: { y: { ticks: { callback: v => 'R$ ' + v } } },
+      }),
+    });
+
+    destroyChart('branchPl');
+    charts.branchPl = new Chart(document.getElementById('chart-branch-pl'), {
+      type: 'bar',
+      data: {
+        labels: pl.by_branch.labels,
+        datasets: [{
+          label: 'P&L (R$)',
+          data: pl.by_branch.pl,
+          backgroundColor: barColors(pl.by_branch.pl),
+          borderRadius: 8,
+        }],
+      },
+      options: {
+        ...baseOptions(),
+        indexAxis: 'y',
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtBRL(ctx.parsed.x) } } },
+        scales: {
+          x: { ticks: { callback: v => 'R$ ' + v } },
+          y: { grid: { display: false } },
+        },
+      },
+    });
+
+    destroyChart('branchRate');
+    charts.branchRate = new Chart(document.getElementById('chart-branch-rate'), {
+      type: 'bar',
+      data: {
+        labels: pl.by_branch.labels,
+        datasets: [{
+          label: '% Acerto',
+          data: pl.by_branch.hit_rate,
+          backgroundColor: pl.by_branch.hit_rate.map(v => v >= 60 ? COLORS.green : v >= 50 ? COLORS.amber : COLORS.red),
+          borderRadius: 8,
+        }],
+      },
+      options: {
+        ...baseOptions(),
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { max: 100, ticks: { callback: v => v + '%' } },
+          y: { grid: { display: false } },
+        },
+      },
+    });
+
+    destroyChart('branchMix');
+    charts.branchMix = new Chart(document.getElementById('chart-branch-mix'), {
+      type: 'bar',
+      data: {
+        labels: pl.by_branch.labels,
+        datasets: [
+          { label: 'Stake (R$)', data: pl.by_branch.stake, backgroundColor: COLORS.slate, borderRadius: 6, yAxisID: 'y' },
+          { label: 'P&L (R$)', data: pl.by_branch.pl, backgroundColor: barColors(pl.by_branch.pl), borderRadius: 6, yAxisID: 'y1' },
+        ],
+      },
+      options: baseOptions({
+        scales: {
+          y: { position: 'left', ticks: { callback: v => 'R$ ' + v }, title: { display: true, text: 'Stake' } },
+          y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => 'R$ ' + v }, title: { display: true, text: 'P&L' } },
+        },
+      }),
+    });
+  }
+
+  function initIaCharts() {
+    const ia = DASHBOARD.ia;
+
+    destroyChart('iaCum');
+    charts.iaCum = new Chart(document.getElementById('chart-ia-cumulative'), {
+      type: 'line',
+      data: {
+        labels: ia.cumulative_accuracy.labels,
+        datasets: [{
+          label: '% Acerto cumulativo',
+          data: ia.cumulative_accuracy.values,
+          borderColor: COLORS.purple,
+          backgroundColor: COLORS.purpleSoft,
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          borderWidth: 2.5,
+        }],
+      },
+      options: baseOptions({
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { min: 0, max: 100, ticks: { callback: v => v + '%' } },
+        },
+      }),
+    });
+
+    destroyChart('iaMonthly');
+    charts.iaMonthly = new Chart(document.getElementById('chart-ia-monthly'), {
+      type: 'bar',
+      data: {
+        labels: ia.monthly.labels,
+        datasets: [
+          { label: 'Hits', data: ia.monthly.hits, backgroundColor: COLORS.green, borderRadius: 6, stack: 's' },
+          { label: 'Misses', data: ia.monthly.misses, backgroundColor: COLORS.red, borderRadius: 6, stack: 's' },
+        ],
+      },
+      options: baseOptions({
+        scales: { x: { stacked: true }, y: { stacked: true, ticks: { stepSize: 1 } } },
+      }),
+    });
+
+    destroyChart('iaScope');
+    charts.iaScope = new Chart(document.getElementById('chart-ia-scope'), {
+      type: 'bar',
+      data: {
+        labels: ia.scope.labels,
+        datasets: [
+          { label: 'Hits', data: ia.scope.hits, backgroundColor: COLORS.green, borderRadius: 8 },
+          { label: 'Misses', data: ia.scope.misses, backgroundColor: COLORS.red, borderRadius: 8 },
+        ],
+      },
+      options: baseOptions(),
+    });
+
+    destroyChart('iaOutcomes');
+    charts.iaOutcomes = new Chart(document.getElementById('chart-ia-outcomes'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Hits', 'Misses', 'Pendentes'],
+        datasets: [{
+          data: [ia.outcomes.hits, ia.outcomes.misses, ia.outcomes.pending],
+          backgroundColor: [COLORS.purple, COLORS.red, COLORS.slate],
+          borderWidth: 0,
+          hoverOffset: 8,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: { legend: { position: 'bottom' } },
+      },
+    });
+
+    destroyChart('iaMarket');
+    charts.iaMarket = new Chart(document.getElementById('chart-ia-market'), {
+      type: 'bar',
+      data: {
+        labels: ia.by_market.labels,
+        datasets: [
+          { label: 'Hits', data: ia.by_market.hits, backgroundColor: COLORS.green, borderRadius: 6, stack: 's' },
+          { label: 'Misses', data: ia.by_market.misses, backgroundColor: COLORS.red, borderRadius: 6, stack: 's' },
+        ],
+      },
+      options: baseOptions({
+        scales: { x: { stacked: true }, y: { stacked: true, ticks: { stepSize: 1 } } },
+      }),
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    initKpis();
+    initTabs();
+    initOverviewCharts();
+    initPlCharts();
+    initIaCharts();
+  });
+</script>
+{% endblock %}

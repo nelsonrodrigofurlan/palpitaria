@@ -23,6 +23,12 @@
             <option value="{{ comp.code }}" {% if current_comp == comp.code %}selected{% endif %}>{{ comp.name }}</option>
           {% endfor %}
         </select>
+        <form action="/user/favorite-comp" method="POST" style="margin: 0; display: flex; align-items: center;">
+          <input type="hidden" name="comp_code" value="{{ current_comp }}">
+          <button type="submit" title="Definir como campeonato padrão" style="background: none; border: none; padding: 0; cursor: pointer; font-size: 1.1rem; filter: {% if user.favorite_comp_code == current_comp %}none{% else %}grayscale(1) opacity(0.4){% endif %}; transition: all 0.2s;" onmouseover="this.style.filter='none'; this.style.opacity='1'" onmouseout="{% if user.favorite_comp_code != current_comp %}this.style.filter='grayscale(1) opacity(0.4)'{% endif %}">
+            📌
+          </button>
+        </form>
       </div>
     </div>
   </div>

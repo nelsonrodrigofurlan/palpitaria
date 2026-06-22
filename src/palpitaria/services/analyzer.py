@@ -698,12 +698,16 @@ def analyze_upcoming(
     limit: int = 50,
     *,
     for_today_only: bool = True,
+    days: int | None = None,
     tz_name: str | None = None,
     competition_code: str | None = None,
 ) -> list[FixtureAnalysis]:
     query = _scheduled_fixtures_query(db, competition_code=competition_code)
-    if for_today_only:
-        ctx = get_today_context(tz_name)
+    ctx = get_today_context(tz_name)
+    if days is not None:
+        end_utc = ctx.start_utc + timedelta(days=days)
+        query = query.filter(Fixture.utc_date >= ctx.start_utc).filter(Fixture.utc_date < end_utc)
+    elif for_today_only:
         query = query.filter(Fixture.utc_date >= ctx.start_utc).filter(Fixture.utc_date < ctx.end_utc)
     fixtures = query.order_by(Fixture.utc_date).limit(limit).all()
     return [analyze_fixture(db, fixture) for fixture in fixtures]
