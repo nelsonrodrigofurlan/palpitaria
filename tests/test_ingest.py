@@ -27,7 +27,7 @@ def test_ingest_competition(db_session):
     ]
     
     # Run ingest
-    result = ingest_competition(db_session, client=mock_client)
+    result = ingest_competition(db_session, client=mock_client, competition_code="TST")
     
     assert result["teams"] == 2
     assert result["fixtures"] == 1
@@ -52,7 +52,7 @@ def test_build_team_profiles(db_session):
     db_session.add(
         Fixture(
             external_id=1001,
-            competition_code="WC",
+            competition_code="TST",
             season=2026,
             utc_date=kickoff,
             home_team_id=home.id,
@@ -82,7 +82,7 @@ def test_build_team_profiles(db_session):
         }
     ]
     
-    updated = build_team_profiles(db_session, client=mock_client, today_only=True)
+    updated = build_team_profiles(db_session, client=mock_client, today_only=True, competition_code="TST")
     
     assert updated == 2
     profile = db_session.query(TeamProfile).filter_by(team_id=home.id).one()
@@ -97,10 +97,86 @@ def test_build_team_profiles_skips_teams_not_playing_today(db_session):
     db_session.commit()
 
     mock_client = MagicMock()
-    updated = build_team_profiles(db_session, client=mock_client, today_only=True)
+    updated = build_team_profiles(db_session, client=mock_client, today_only=True, competition_code="TST")
 
     assert updated == 0
     mock_client.get_team_matches.assert_not_called()
+
+
+def test_build_team_profiles_backfills_missing_profiles(db_session):
+    """Seleções que já jogaram mas não têm perfil válido devem ser atualizadas mesmo sem jogo hoje."""
+    home = Team(external_id=9763, name="Gana Test")
+    away = Team(external_id=9999, name="Panamá Test")
+    db_session.add_all([home, away])
+    db_session.flush()
+
+    db_session.add(
+        Fixture(
+            external_id=99999410,
+            competition_code="TST",
+            season=2026,
+            utc_date=datetime(2026, 6, 17, 23, 0, 0),
+            home_team_id=home.id,
+            away_team_id=away.id,
+            status="FINISHED",
+            home_score=1,
+            away_score=0,
+        )
+    )
+    db_session.add(
+        TeamProfile(
+            team_id=away.id,
+            computed_at=datetime.utcnow(),
+            matches_sampled=3,
+            avg_goals_scored=1.0,
+            avg_goals_conceded=1.0,
+            zero_zero_rate=0.0,
+            over_05_rate=1.0,
+            over_15_rate=0.5,
+            over_25_rate=0.0,
+            win_rate=0.33,
+            both_teams_score_rate=0.5,
+        )
+    )
+    db_session.add(
+        TeamProfile(
+            team_id=home.id,
+            computed_at=datetime.utcnow(),
+            matches_sampled=0,
+            avg_goals_scored=0.0,
+            avg_goals_conceded=0.0,
+            zero_zero_rate=1.0,
+            over_05_rate=0.0,
+            over_15_rate=0.0,
+            over_25_rate=0.0,
+            win_rate=0.0,
+            both_teams_score_rate=0.0,
+        )
+    )
+    db_session.commit()
+
+    mock_client = MagicMock()
+    mock_client.get_team_matches.return_value = [
+        {
+            "homeTeam": {"id": 9763},
+            "awayTeam": {"id": 9999},
+            "score": {"fullTime": {"home": 1, "away": 0}},
+        },
+    ]
+
+    updated = build_team_profiles(db_session, client=mock_client, today_only=True, competition_code="TST")
+
+    assert updated == 1
+    profile = (
+        db_session.query(TeamProfile)
+        .filter_by(team_id=home.id)
+        .filter(TeamProfile.matches_sampled >= 1)
+        .order_by(TeamProfile.computed_at.desc())
+        .first()
+    )
+    assert profile is not None
+    assert profile.matches_sampled >= 1
+    assert profile.avg_goals_scored == pytest.approx(1.0, abs=1e-3)
 
 
 def test_build_team_profiles_refreshes_stale_profile_on_new_day(db_session):
@@ -117,7 +193,7 @@ def test_build_team_profiles_refreshes_stale_profile_on_new_day(db_session):
     db_session.add(
         Fixture(
             external_id=2001,
-            competition_code="WC",
+            competition_code="TST",
             season=2026,
             utc_date=kickoff,
             home_team_id=home.id,
@@ -151,7 +227,7 @@ def test_build_team_profiles_refreshes_stale_profile_on_new_day(db_session):
         },
     ]
 
-    updated = build_team_profiles(db_session, client=mock_client, today_only=True)
+    updated = build_team_profiles(db_session, client=mock_client, today_only=True, competition_code="TST")
 
     assert updated == 2
     mock_client.get_team_matches.assert_called()

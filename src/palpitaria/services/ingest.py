@@ -125,12 +125,91 @@ def ingest_competition(
     return result
 
 
+def _match_dedup_key(match: dict) -> str:
+    home = (match.get("homeTeam") or {}).get("name", "")
+    away = (match.get("awayTeam") or {}).get("name", "")
+    h = _extract_score(match, "home")
+    a = _extract_score(match, "away")
+    pair = tuple(sorted([str(home).lower().strip(), str(away).lower().strip()]))
+    return f"{pair[0]}|{pair[1]}|{h}-{a}"
+
+
+def _merge_match_lists(*lists: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    merged: list[dict] = []
+    for batch in lists:
+        for match in batch:
+            key = _match_dedup_key(match)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(match)
+    return merged
+
+
+def _fixture_to_api_match(fixture: Fixture, home: Team, away: Team) -> dict:
+    utc = fixture.utc_date
+    if utc is not None and getattr(utc, "tzinfo", None) is not None:
+        utc = utc.replace(tzinfo=None)
+    return {
+        "id": fixture.external_id,
+        "utcDate": utc.isoformat() if utc else None,
+        "status": fixture.status,
+        "homeTeam": {"id": home.external_id, "name": home.name},
+        "awayTeam": {"id": away.external_id, "name": away.name},
+        "score": {"fullTime": {"home": fixture.home_score, "away": fixture.away_score}},
+    }
+
+
+def finished_competition_matches_for_team(
+    db: Session, team_id: int, competition_code: str
+) -> list[dict]:
+    """FINISHED fixtures already synced for this competition (fallback when API lags)."""
+    fixtures = (
+        db.query(Fixture)
+        .filter(Fixture.competition_code == competition_code)
+        .filter(Fixture.status == "FINISHED")
+        .filter((Fixture.home_team_id == team_id) | (Fixture.away_team_id == team_id))
+        .order_by(Fixture.utc_date.desc())
+        .all()
+    )
+    rows: list[dict] = []
+    for fixture in fixtures:
+        if fixture.home_score is None or fixture.away_score is None:
+            continue
+        home = db.get(Team, fixture.home_team_id)
+        away = db.get(Team, fixture.away_team_id)
+        if home is None or away is None:
+            continue
+        rows.append(_fixture_to_api_match(fixture, home, away))
+    return rows
+
+
+def teams_missing_profiles(db: Session, competition_code: str) -> list[Team]:
+    team_ids: set[int] = set()
+    for home_id, away_id in db.query(Fixture.home_team_id, Fixture.away_team_id).filter(
+        Fixture.competition_code == competition_code
+    ):
+        team_ids.add(home_id)
+        team_ids.add(away_id)
+    if not team_ids:
+        return []
+    missing: list[Team] = []
+    for team in db.query(Team).filter(Team.id.in_(team_ids)).order_by(Team.name):
+        if latest_profile(db, team.id) is None:
+            missing.append(team)
+    return missing
+
+
 def profile_updated_today(profile: TeamProfile, tz_name: str | None = None) -> bool:
-    """Perfil API considerado fresco só no dia do jogo (timezone do app)."""
-    tz = ZoneInfo(tz_name or settings.app_timezone)
-    computed = profile.computed_at.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
-    now = datetime.now(tz)
-    return (computed.year, computed.month, computed.day) == (now.year, now.month, now.day)
+    """Perfil API considerado fresco só no dia operacional (6h→6h no fuso do app)."""
+    from palpitaria.services.analyzer import get_today_context
+
+    ctx = get_today_context(tz_name)
+    computed = profile.computed_at.replace(tzinfo=ZoneInfo("UTC"))
+    start = ctx.start_utc.replace(tzinfo=ZoneInfo("UTC"))
+    end = ctx.end_utc.replace(tzinfo=ZoneInfo("UTC"))
+    return start <= computed < end
 
 
 def build_team_profiles(
@@ -155,11 +234,27 @@ def build_team_profiles(
         from palpitaria.services.wc_profile_web import teams_playing_today
 
         ctx = get_today_context()
-        teams = teams_playing_today(db, competition_code=code)
+        today_teams = teams_playing_today(db, competition_code=code)
+        missing_teams = teams_missing_profiles(db, code)
+        by_id = {team.id: team for team in today_teams}
+        for team in missing_teams:
+            by_id.setdefault(team.id, team)
+        teams = sorted(by_id.values(), key=lambda t: t.name)
         if not teams:
-            log(f"Nenhum jogo de {code} hoje ({ctx.label}) — perfis não atualizados.")
+            log(f"Nenhum jogo de {code} hoje ({ctx.label}) e nenhum perfil pendente.")
             return 0
-        log(f"Competição {code}: {len(teams)} times com jogo hoje ({ctx.label})...")
+        if today_teams and missing_teams:
+            log(
+                f"Competição {code}: {len(today_teams)} time(s) hoje ({ctx.label}) "
+                f"+ {len(missing_teams)} sem perfil válido (backfill — não gera leitura)..."
+            )
+        elif missing_teams:
+            log(
+                f"Competição {code}: {len(missing_teams)} seleção(ões) sem perfil válido "
+                f"— backfill de histórico (leituras continuam só nos jogos do dia)..."
+            )
+        else:
+            log(f"Competição {code}: {len(teams)} times com jogo hoje ({ctx.label})...")
     else:
         team_ids: set[int] = set()
         for home_id, away_id in db.query(Fixture.home_team_id, Fixture.away_team_id).filter(
@@ -188,25 +283,37 @@ def build_team_profiles(
             time.sleep(6.5)  # football-data.org free tier: 10 req/min
 
         log(f"Processando {team.name} ({team.external_id})...")
+        api_matches: list[dict] = []
         try:
-            matches = client.get_team_matches(team.external_id, limit=30)
-            log(f"  -> {len(matches)} jogos encontrados")
+            api_matches = client.get_team_matches(team.external_id, limit=30)
+            log(f"  -> API: {len(api_matches)} jogo(s) finalizado(s)")
         except Exception as e:
-            log(f"  !! Erro ao buscar jogos: {e}")
-            continue
+            log(f"  !! Erro ao buscar jogos na API: {e}")
 
         api_calls += 1
 
+        db_matches = finished_competition_matches_for_team(db, team.id, code)
+        matches = _merge_match_lists(api_matches, db_matches)
+        if db_matches and len(db_matches) > len(api_matches):
+            log(f"  -> Banco: {len(db_matches)} jogo(s) FINISHED na {code}")
+
         if not matches:
+            log(f"  -> Sem jogos finalizados (API + banco) — passo 3 usa perfil web")
             continue
 
         stats = _compute_match_stats(matches, team.external_id)
         if stats["matches_sampled"] < 1:
-            log(f"  -> Sem jogos finalizados na API (estreia?) — passo 3 usa perfil web")
+            log(f"  -> Sem jogos finalizados válidos — passo 3 usa perfil web")
             continue
 
-        stats["source"] = "api"
-        stats["api_matches"] = stats["matches_sampled"]
+        if api_matches and db_matches:
+            stats["source"] = "api+db"
+        elif db_matches:
+            stats["source"] = "db"
+        else:
+            stats["source"] = "api"
+        stats["api_matches"] = len(api_matches)
+        stats["db_matches"] = len(db_matches)
         stats["recent_matches"] = build_matches_snapshot(matches, team.name, team.external_id, limit=3)
         stats["calc_matches"] = build_matches_snapshot(
             matches, team.name, team.external_id, limit=max(stats["matches_sampled"], 3)

@@ -21,8 +21,9 @@ def _norm_name(value: str) -> str:
 
 
 def analysis_local_date(dt: datetime) -> date:
-    utc = dt.replace(tzinfo=ZoneInfo("UTC"))
-    return utc.astimezone(ZoneInfo(settings.app_timezone)).date()
+    from palpitaria.services.analyzer import operational_local_date
+
+    return operational_local_date(dt)
 
 
 def normalize_market(market: str) -> str:

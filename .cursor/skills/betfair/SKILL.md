@@ -61,6 +61,12 @@ Ao analisar um jogo, identifique o `competition_code` e aplique as regras do esp
 7. **Validação privada** — track record antes de qualquer exposição pública.
 8. **Anti-zero-gols** — filtro de exclusão antes de qualquer indicação; sem dados = sem pick.
 
+## Dia operacional (análises)
+
+- **Janela:** `06:00` → `06:00` do dia seguinte em `America/Sao_Paulo` (`app_day_start_hour=6`).
+- **Leituras / home / pipeline:** só fixtures com kickoff nessa janela (`for_today_only=True`).
+- **Perfis:** passo 2 atualiza seleções do dia **e** faz backfill de quem ficou sem perfil (ex.: Gana, Jordânia, Tunísia) — isso **não** expande análises para jogos passados.
+
 ## Pipeline de decisão (gols)
 
 ```

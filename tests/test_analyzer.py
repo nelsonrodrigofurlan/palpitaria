@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
 from palpitaria.models import Team, Fixture, TeamProfile
 from palpitaria.services.analyzer import analyze_fixture, build_criteria_brief, get_today_context
 
@@ -194,7 +196,18 @@ def test_criteria_brief_argentina_algeria_shape(db_session):
 
 
 def test_today_context_logic():
-    ctx = get_today_context("America/Sao_Paulo")
+    tz = ZoneInfo("America/Sao_Paulo")
+    # 22/06 10:00 SP → dia operacional 22/06, janela 22/06 06:00–23/06 06:00
+    ctx = get_today_context("America/Sao_Paulo", now=datetime(2026, 6, 22, 10, 0, tzinfo=tz))
+    assert ctx.date_local.isoformat() == "2026-06-22"
     assert ctx.timezone == "America/Sao_Paulo"
     assert ctx.start_utc < ctx.end_utc
     assert (ctx.end_utc - ctx.start_utc).total_seconds() == 86400
+
+    # 22/06 03:00 SP (madrugada) → ainda dia operacional 21/06
+    ctx_night = get_today_context("America/Sao_Paulo", now=datetime(2026, 6, 22, 3, 0, tzinfo=tz))
+    assert ctx_night.date_local.isoformat() == "2026-06-21"
+
+    # Jogo 23/06 00:00 SP entra no dia operacional 22/06
+    kickoff = datetime(2026, 6, 23, 0, 0, tzinfo=tz).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    assert ctx.start_utc <= kickoff < ctx.end_utc

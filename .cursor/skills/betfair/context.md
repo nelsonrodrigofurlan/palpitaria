@@ -115,14 +115,16 @@ Toda recomendação deve incluir:
 
 O modelo é **filtro de exclusão primeiro**: descartar tudo que cheire 0-0; só então ranquear o que sobrou para over 0,5 / 1,5.
 
-### Janela diária (decisão de produto — 2026-06-13)
+### Janela diária (decisão de produto — 2026-06-13, atualizado 2026-06-22)
 
-A análise roda **somente nos jogos do dia** (`APP_TIMEZONE`, default `America/Sao_Paulo`). Lesões, suspensões e contexto mudam de um dia pro outro; não faz sentido manter leituras de jogos futuros na home.
+A análise roda **somente nos jogos do dia operacional** (`APP_TIMEZONE`, default `America/Sao_Paulo`). Lesões, suspensões e contexto mudam de um dia pro outro; não faz sentido manter leituras de jogos futuros na home.
+
+**Dia operacional = 06:00 → 06:00** (fuso `America/Sao_Paulo`). O dia não vira à meia-noite: jogos da madrugada (ex.: 00:00–05:59) entram no dia que começou às 6h do dia anterior. Ex.: às 20h de 22/06, a janela inclui Jordânia x Argélia às 00:00 de 23/06.
 
 | Camada | Escopo |
 |--------|--------|
-| **Perfis das seleções** | Histórico embutido (últimos ~30 jogos FINISHED por seleção) — atualizado no passo 2, não diariamente |
-| **Filtro + LLM** | Apenas fixtures SCHEDULED/TIMED/IN_PLAY com kickoff no dia corrente |
+| **Perfis das seleções** | Histórico embutido (últimos ~30 jogos FINISHED) — passo 2 atualiza quem joga hoje **+ backfill** de seleções sem perfil válido (não gera leitura) |
+| **Filtro + LLM** | Apenas fixtures SCHEDULED/TIMED/IN_PLAY com kickoff na janela 6h→6h do dia operacional |
 | **UI** | Home mostra candidatos e descartados de hoje; calendário completo continua no banco via sync |
 
 Futuro: escalações/lesões pré-jogo (API paga ou scraping) entram **no dia do jogo**, antes da leitura LLM.

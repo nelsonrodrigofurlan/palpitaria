@@ -173,6 +173,8 @@ class Settings(BaseSettings):
 
     # Janela "jogos de hoje" — lesões/expulsões mudam de um dia pro outro
     app_timezone: str = "America/Sao_Paulo"
+    # Dia operacional: 06:00 → 06:00 (pega jogos da madrugada no fuso do app)
+    app_day_start_hour: int = 6
 
     min_combined_avg_goals: float = 2.0
     strong_combined_avg_goals: float = 3.5

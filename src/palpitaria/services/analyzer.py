@@ -110,16 +110,31 @@ class TodayContext:
     end_utc: datetime
 
 
-def get_today_context(tz_name: str | None = None) -> TodayContext:
+def operational_local_date(dt: datetime, tz_name: str | None = None) -> date:
+    """Data operacional de um instante (dia começa às app_day_start_hour no fuso do app)."""
     tz = ZoneInfo(tz_name or settings.app_timezone)
-    now_local = datetime.now(tz)
-    start_local = datetime.combine(now_local.date(), time.min, tzinfo=tz)
+    if dt.tzinfo is None:
+        local = dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
+    else:
+        local = dt.astimezone(tz)
+    if local.hour < settings.app_day_start_hour:
+        return local.date() - timedelta(days=1)
+    return local.date()
+
+
+def get_today_context(tz_name: str | None = None, *, now: datetime | None = None) -> TodayContext:
+    tz = ZoneInfo(tz_name or settings.app_timezone)
+    now_local = now.astimezone(tz) if now is not None else datetime.now(tz)
+    op_date = operational_local_date(now_local, tz_name)
+    start_local = datetime.combine(
+        op_date, time(settings.app_day_start_hour, 0), tzinfo=tz
+    )
     end_local = start_local + timedelta(days=1)
     start_utc = start_local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
     end_utc = end_local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
     return TodayContext(
-        date_local=now_local.date(),
-        label=now_local.strftime("%d/%m/%Y"),
+        date_local=op_date,
+        label=op_date.strftime("%d/%m/%Y"),
         timezone=tz.key,
         start_utc=start_utc,
         end_utc=end_utc,
