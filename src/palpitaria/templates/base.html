@@ -692,6 +692,44 @@
         });
     }
 
+    function getPageComp() {
+      const sel = document.querySelector('select[name="comp"]');
+      return sel ? sel.value : '';
+    }
+
+    function refreshHome(comp) {
+      const code = comp || getPageComp();
+      const url = code ? '/?comp=' + encodeURIComponent(code) : '/';
+      window.location.assign(url);
+    }
+
+    function stopLoadingUI(opts) {
+      const options = opts || {};
+      document.getElementById('top-progress')?.classList.remove('active');
+      document.querySelectorAll('.actions button').forEach(function(b) { b.disabled = false; });
+      if (loadingTimer) { clearInterval(loadingTimer); loadingTimer = null; }
+      if (logPolling) { clearInterval(logPolling); logPolling = null; }
+      if (statusPolling) { clearInterval(statusPolling); statusPolling = null; }
+      activePipelinePath = null;
+
+      setTimeout(function() {
+        document.getElementById('terminal-modal').style.display = 'none';
+        document.getElementById('modal-overlay').style.display = 'none';
+        if (options.reload) {
+          refreshHome(options.comp);
+        }
+      }, 2000);
+    }
+
+    function finishPipelineSuccess(comp) {
+      const body = document.getElementById('terminal-body');
+      if (body) {
+        body.innerHTML += '<pre>[SISTEMA] Concluído! Atualizando a página em instantes…</pre>';
+        body.scrollTop = body.scrollHeight;
+      }
+      stopLoadingUI({ reload: true, comp: comp || getPageComp() });
+    }
+
     function startPipelineStatusPolling() {
       if (statusPolling) clearInterval(statusPolling);
       const startedAt = Date.now();
@@ -699,7 +737,26 @@
         fetch('/pipeline/status', { credentials: 'same-origin' })
           .then(r => r.json())
           .then(function(data) {
-            if (!data.active && !data.running && Date.now() - startedAt > 4000) {
+            if (data.done && !data.running) {
+              clearInterval(statusPolling);
+              statusPolling = null;
+              activePipelinePath = null;
+              if (data.cancelled) {
+                stopLoadingUI();
+                return;
+              }
+              if (data.error) {
+                const body = document.getElementById('terminal-body');
+                if (body) {
+                  body.innerHTML += '<pre>[ERRO] ' + data.error + '</pre>';
+                }
+                stopLoadingUI();
+                return;
+              }
+              finishPipelineSuccess(data.comp);
+              return;
+            }
+            if (!data.done && !data.active && !data.running && Date.now() - startedAt > 4000) {
               clearInterval(statusPolling);
               statusPolling = null;
               activePipelinePath = null;
@@ -708,40 +765,10 @@
                 body.innerHTML += '<pre>[ERRO] Processo interrompido. Atualize a página e tente novamente.</pre>';
               }
               stopLoadingUI();
-              return;
             }
-            if (!data.done || data.running) return;
-            clearInterval(statusPolling);
-            statusPolling = null;
-            activePipelinePath = null;
-            if (data.error) {
-              const body = document.getElementById('terminal-body');
-              if (body) {
-                body.innerHTML += '<pre>[ERRO] ' + data.error + '</pre>';
-              }
-              stopLoadingUI();
-              return;
-            }
-            stopLoadingUI();
-            window.location.href = '/?comp=' + encodeURIComponent(data.comp || '');
           })
           .catch(function() {});
       }, 1500);
-    }
-
-    function stopLoadingUI() {
-      document.getElementById('top-progress')?.classList.remove('active');
-      document.querySelectorAll('.actions button').forEach(function(b) { b.disabled = false; });
-      if (loadingTimer) { clearInterval(loadingTimer); loadingTimer = null; }
-      if (logPolling) { clearInterval(logPolling); logPolling = null; }
-      if (statusPolling) { clearInterval(statusPolling); statusPolling = null; }
-      activePipelinePath = null;
-      
-      // Keep modal visible for 2s after finish then hide
-      setTimeout(() => {
-        document.getElementById('terminal-modal').style.display = 'none';
-        document.getElementById('modal-overlay').style.display = 'none';
-      }, 2000);
     }
 
     function handlePipelineAfterRequest(evt) {
@@ -749,6 +776,12 @@
       if (path === '/pipeline' && evt.detail.successful) {
         activePipelinePath = '/pipeline';
         startPipelineStatusPolling();
+        return;
+      }
+      if (evt.detail.successful && loadingMessages[path]) {
+        const qs = (evt.detail.pathInfo?.requestPath || '').split('?')[1] || '';
+        const comp = new URLSearchParams(qs).get('comp');
+        finishPipelineSuccess(comp);
         return;
       }
       stopLoadingUI();

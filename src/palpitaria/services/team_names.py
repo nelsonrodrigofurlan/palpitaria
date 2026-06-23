@@ -71,6 +71,7 @@ ENGLISH_ALIASES: dict[str, str] = {
     "cape verde": "Cabo Verde",
     "colombia": "Colômbia",
     "congo dr": "RD Congo",
+    "congo": "RD Congo",
     "dr congo": "RD Congo",
     "democratic republic of the congo": "RD Congo",
     "croatia": "Croácia",

@@ -1,0 +1,11 @@
+<div class="chat-bubble ai" style="border-left: 4px solid #eab308; max-width: 95%;">
+  <strong>Analista:</strong>
+  Acabou o expediente de hoje — você já usou suas {{ quota.limit }} mensagens.
+  Amanhã (a partir das 6h, {{ app_timezone }}) libera mais {{ quota.limit }}.
+  Enquanto isso, os palpites oficiais estão na home.
+</div>
+{% if quota.limited %}
+<div id="chat-compose" hx-swap-oob="true">
+  {% include "partials/chat_compose.html" %}
+</div>
+{% endif %}

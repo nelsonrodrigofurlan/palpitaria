@@ -1,10 +1,20 @@
 <div class="chat-bubble user">
   <strong>Você:</strong> {{ user_message }}
 </div>
-<div class="chat-bubble ai {% if is_valid %}valid{% endif %}">
-  <strong>Auditor:</strong> {{ ai_response }}
+<div class="chat-bubble ai {% if is_valid %}valid{% endif %}{% if verdict %} verdict-{{ verdict }}{% endif %}">
+  <strong>Analista:</strong> {{ ai_response }}
+  {% if verdict and verdict != 'n/a' %}
+    <div class="verdict-tag verdict-{{ verdict }}">
+      {% if verdict == 'supports' %}✓ Dados sustentam{% elif verdict == 'caution' %}⚠ Cautela{% elif verdict == 'against' %}✗ Contradiz{% else %}◎ Neutro{% endif %}
+    </div>
+  {% endif %}
   {% if is_valid %}
-    <div class="status-tag">✓ Validado para Conhecimento</div>
-    <p style="font-size: 0.75rem; color: var(--muted); margin: 0.25rem 0 0;">{{ evaluation }}</p>
+    <div class="status-tag">✓ Fato incorporado à base analítica (não altera palpite oficial)</div>
+    {% if evaluation %}<p style="font-size: 0.75rem; color: var(--muted); margin: 0.25rem 0 0;">{{ evaluation }}</p>{% endif %}
   {% endif %}
 </div>
+{% if quota and quota.limited %}
+<div id="chat-compose" hx-swap-oob="true">
+  {% include "partials/chat_compose.html" %}
+</div>
+{% endif %}

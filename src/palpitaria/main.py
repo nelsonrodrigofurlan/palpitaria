@@ -58,14 +58,23 @@ from palpitaria.models import Fixture
 
 # Global log buffer for "Nerd Vision"
 LOG_BUFFER = deque(maxlen=100)
-PIPELINE_STATE = {"active": False, "running": False, "done": False, "error": None, "comp": None}
+PIPELINE_STATE = {
+    "active": False,
+    "running": False,
+    "done": False,
+    "error": None,
+    "comp": None,
+    "cancelled": False,
+}
 PIPELINE_CANCEL = threading.Event()
 _ACTIVE_DB_RUN_ID: int | None = None
 
 
 def reset_pipeline_state(cancelled: bool = False) -> None:
     PIPELINE_CANCEL.set()
-    PIPELINE_STATE.update(active=False, running=False, done=True, error=None, comp=None)
+    PIPELINE_STATE.update(
+        active=False, running=False, done=True, error=None, comp=None, cancelled=cancelled
+    )
     if cancelled:
         add_log("⛔ Pipeline abortado pelo usuário.")
     PIPELINE_CANCEL.clear()
@@ -138,7 +147,9 @@ def admin_required(request: Request, user=Depends(login_required)):
 @app.on_event("startup")
 def on_startup() -> None:
     LOG_BUFFER.clear()
-    PIPELINE_STATE.update(active=False, running=False, done=False, error=None, comp=None)
+    PIPELINE_STATE.update(
+        active=False, running=False, done=False, error=None, comp=None, cancelled=False
+    )
     PIPELINE_CANCEL.clear()
 
     if settings.database_config_error:
@@ -549,7 +560,9 @@ def _start_pipeline(comp_code: str, db: Session, football_token: str | None, *, 
         raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no Admin ou .env")
 
     PIPELINE_CANCEL.clear()
-    PIPELINE_STATE.update(active=True, running=True, done=False, error=None, comp=comp_code)
+    PIPELINE_STATE.update(
+        active=True, running=True, done=False, error=None, comp=comp_code, cancelled=False
+    )
     LOG_BUFFER.clear()
     add_log(f"🚀 Preparando pipeline completo ({comp_code})...")
     thread = threading.Thread(target=_run_full_pipeline_work, args=(comp_code, run_id), daemon=True)
@@ -731,6 +744,7 @@ def pipeline_status(user=Depends(admin_required)) -> dict:
         "done": PIPELINE_STATE["done"],
         "error": PIPELINE_STATE["error"],
         "comp": PIPELINE_STATE["comp"],
+        "cancelled": PIPELINE_STATE["cancelled"],
     }
 
 
@@ -1125,25 +1139,36 @@ def aviso_legal_page(request: Request):
 
 @app.get("/chat", response_class=HTMLResponse)
 def chat_page(request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
-    from palpitaria.models import UserInsight
+    from palpitaria.services.chat_service import fetch_user_chat_history, user_chat_daily_quota
+
     cy, cm = current_period()
-    # Pegar as últimas interações do usuário
-    history = db.query(UserInsight).filter(UserInsight.user_id == user.id).order_by(UserInsight.created_at.desc()).limit(20).all()
+    history = fetch_user_chat_history(db, user.id, ascending=True)
+    quota = user_chat_daily_quota(db, user.id, user.email)
     return TEMPLATES.TemplateResponse(
         request,
         "chat.html",
         {
             "current_period": period_label(cy, cm),
             "app_timezone": settings.app_timezone,
-            "history": reversed(history),
-        }
+            "history": history,
+            "quota": quota,
+        },
     )
 
 
 @app.post("/chat/send", response_class=HTMLResponse)
 async def chat_send(request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
+    from palpitaria.services.chat_service import process_user_message, user_chat_daily_quota
     from palpitaria.services.config_service import get_api_config
-    
+
+    quota = user_chat_daily_quota(db, user.id, user.email)
+    if quota["blocked"]:
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/chat_limit.html",
+            {"quota": quota, "app_timezone": settings.app_timezone},
+        )
+
     llm_key = get_api_config(db, "OPENAI_API_KEY")
     llm_base = get_api_config(db, "OPENAI_BASE_URL")
     if llm_key:
@@ -1156,7 +1181,8 @@ async def chat_send(request: Request, db: Session = Depends(get_db), user=Depend
         return ""
     
     result = process_user_message(db, message, user_id=user.id)
-    
+    quota_after = user_chat_daily_quota(db, user.id, user.email)
+
     return TEMPLATES.TemplateResponse(
         request,
         "partials/chat_message.html",
@@ -1165,7 +1191,10 @@ async def chat_send(request: Request, db: Session = Depends(get_db), user=Depend
             "ai_response": result.get("response"),
             "is_valid": result.get("is_valid"),
             "evaluation": result.get("evaluation"),
-        }
+            "verdict": result.get("verdict"),
+            "quota": quota_after,
+            "app_timezone": settings.app_timezone,
+        },
     )
 
 

@@ -138,6 +138,17 @@ Futuro: escalações/lesões pré-jogo (API paga ou scraping) entram **no dia do
 
 O fundador revisa, aprova ou orienta com base nesses textos. Fontes cadastradas **somam** às core-6 (FIFA, ESPN, Transfermarkt…), não substituem.
 
+### Inteligência Coletiva — chat colaborativo (2026-06-22)
+
+Rota `/chat`. O usuário pode:
+- **Questionar** homologadas, descartes e alternativas (a IA explica com critérios, score e leitura salva).
+- **Propor entradas** (ex.: “Colômbia a 55%”) — bate-papo adulto: opina a favor ou contra com dados; **não** rehomologa pré-live. Se pedirem palpite firme → TRADER no live, não pré-live.
+- **Incorporar fatos** — só `insight_type: fact` + `incorporate: true`; enriquece contexto do time nas análises futuras, **sem** reescrever `FixtureReport` / picks do pipeline.
+
+**Soberania:** skill do produto (gols, anti-zero, descarte) > chat. Chat nunca chama `persist_analysis` nem altera homologada/alternativa da home.
+
+**UI:** histórico do usuário logado = **últimos 2 dias**; scroll automático na última mensagem. **Cota:** **3 mensagens/dia** por usuário (dia operacional 6h→6h); admin root sem limite.
+
 ### Critérios objetivos — exclusão automática *(sem indicar)*
 
 Jogo **não entra** se qualquer condição for verdadeira (limiares calibráveis com dados):

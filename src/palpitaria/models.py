@@ -221,13 +221,18 @@ class UserInsight(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     content: Mapped[str] = mapped_column(Text)  # O que o usuário disse
-    evaluation: Mapped[str | None] = mapped_column(Text, nullable=True)  # Análise da IA
-    is_valid: Mapped[bool] = mapped_column(default=False)  # Se passou pelo crivo dos pilares
+    ai_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evaluation: Mapped[str | None] = mapped_column(Text, nullable=True)  # Motivo de incorporar
+    is_valid: Mapped[bool] = mapped_column(default=False)  # Incorporado à base
     team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
+    fixture_id: Mapped[int | None] = mapped_column(ForeignKey("fixtures.id"), nullable=True)
+    insight_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    verdict: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User | None"] = relationship(back_populates="insights")
     team: Mapped["Team | None"] = relationship()
+    fixture: Mapped["Fixture | None"] = relationship()
 
 
 class Competition(Base):

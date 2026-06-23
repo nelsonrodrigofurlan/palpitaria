@@ -114,6 +114,26 @@ def apply_schema_migrations() -> None:
             conn.execute(text("UPDATE branches SET side = 'BACK' WHERE side IS NULL"))
 
         _migrate_pipeline_daily_per_comp(conn, dialect, engine)
+        _migrate_user_insights_chat(conn, dialect, engine)
+
+
+def _migrate_user_insights_chat(conn, dialect: str, engine: Engine) -> None:
+    if not inspect(engine).has_table("user_insights"):
+        return
+    cols = {c["name"] for c in inspect(engine).get_columns("user_insights")}
+    additions = [
+        ("ai_response", "TEXT"),
+        ("fixture_id", "INTEGER"),
+        ("insight_type", "VARCHAR(20)"),
+        ("verdict", "VARCHAR(20)"),
+    ]
+    for col, typedef in additions:
+        if col in cols:
+            continue
+        if dialect == "postgresql":
+            conn.execute(text(f"ALTER TABLE user_insights ADD COLUMN IF NOT EXISTS {col} {typedef}"))
+        elif dialect == "sqlite":
+            conn.execute(text(f"ALTER TABLE user_insights ADD COLUMN {col} {typedef}"))
 
 
 def _migrate_pipeline_daily_per_comp(conn, dialect: str, engine: Engine) -> None:

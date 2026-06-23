@@ -74,6 +74,8 @@ Ao analisar um jogo, identifique o `competition_code` e aplique as regras do esp
 | Skills do Agente | `/admin/skills` | Lê `.cursor/skills/` em linguagem natural + markdown completo |
 | Fontes Scouting | `/admin/fontes` | URLs extras (global ou por seleção) → queries no stalking |
 
+**Inteligência Coletiva** (`/chat`): bate-papo adulto — a IA lê, entende e **opina** (a favor ou contra) com dados; **não fica só concordando**. Palpite pré-live oficial **não muda** pelo chat (pipeline já rodou). Papinho ou palpite firme forçado → escapada à francesa: orientar **acompanhar como TRADER** no live, não pré-live. Incorporar só **fatos** (`insight_type: fact`). Skill global: `palpitaria-inteligencia-coletiva`.
+
 **Ao criar ou alterar skills:** editar arquivos em `.cursor/skills/`; a página admin reflete pelo `mtime` do arquivo. Novo arquivo `.md` → adicionar resumo em `PLAIN_PURPOSE` em `services/skills_reader.py`.
 
 ## Pipeline de decisão (gols)

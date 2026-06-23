@@ -1,41 +1,87 @@
 {% extends "base.html" %}
-{% block title %}Chat Auditor — Palpitaria FC{% endblock %}
+{% block title %}Inteligência Coletiva — Palpitaria FC{% endblock %}
 {% block content %}
 <header style="margin-bottom: 2rem;">
   <h1>💡 Inteligência Coletiva</h1>
-  <p class="sub">Compartilhe percepções técnicas ou bastidores. O Auditor Sênior filtra com <strong>RIGOR EXTREMO</strong> o que entra para a base de conhecimento global da IA.</p>
+  <p class="sub" style="max-width: 52rem;">
+    Bate-papo adulto sobre os jogos do dia: peça explicação, questione um descarte ou traga
+    <strong>sua leitura</strong> — a IA responde com dados e pode <strong>concordar ou discordar</strong>.
+    O palpite pré-live oficial <strong>não muda</strong> por aqui (o pipeline já rodou).
+    Se pedir palpite firme fora do oficial, a orientação tende a ser <strong>acompanhar como TRADER</strong> no live.
+    Fatos técnicos validados podem enriquecer a base analítica do time.
+    <span style="color: var(--muted); font-size: 0.85rem;">Histórico visível: últimos 2 dias.
+    {% if quota.limited %} · <strong>{{ quota.limit }} mensagens por dia</strong> (dia operacional 6h→6h).{% endif %}
+    </span>
+  </p>
 </header>
 
-<div class="card" style="display: flex; flex-direction: column; height: 65vh; max-height: 700px;">
-  <div id="chat-window" style="flex: 1; overflow-y: auto; padding: 1rem; background: #f8fafc; border-radius: 12px; margin-bottom: 1rem; border: 1px solid #e2e8f0;">
+<div class="card" style="display: flex; flex-direction: column; height: 65vh; max-height: 720px;">
+  <div id="chat-window" style="flex: 1; overflow-y: auto; padding: 1rem; background: #f8fafc; border-radius: 12px; margin-bottom: 1rem; border: 1px solid #e2e8f0; display: flex; flex-direction: column;">
+    {% if not history %}
+    <div class="chat-bubble ai" style="max-width: 100%;">
+      <strong>Palpitaria:</strong>
+      Exemplos: “Por que descartaram México x Coreia?” · “Vi Colômbia pagando 55% — vale entrar?” ·
+      “Haiti sem o titular X confirmado no bastidor”
+    </div>
+    {% endif %}
     {% for msg in history %}
       <div class="chat-bubble user">
         <strong>Você:</strong> {{ msg.content }}
       </div>
-      <div class="chat-bubble ai {% if msg.is_valid %}valid{% endif %}">
-        <strong>Auditor:</strong> {{ msg.evaluation or 'Percepção processada.' }}
+      <div class="chat-bubble ai {% if msg.is_valid %}valid{% endif %} {% if msg.verdict %}verdict-{{ msg.verdict }}{% endif %}">
+        <strong>Analista:</strong> {{ msg.ai_response or msg.evaluation or 'Resposta processada.' }}
+        {% if msg.verdict and msg.verdict != 'n/a' %}
+          <div class="verdict-tag verdict-{{ msg.verdict }}">
+            {% if msg.verdict == 'supports' %}✓ Dados sustentam{% elif msg.verdict == 'caution' %}⚠ Cautela{% elif msg.verdict == 'against' %}✗ Contradiz{% else %}◎ Neutro{% endif %}
+          </div>
+        {% endif %}
         {% if msg.is_valid %}
-          <div class="status-tag">✓ Validado para Conhecimento</div>
+          <div class="status-tag">✓ Fato incorporado à base analítica (não altera palpite oficial)</div>
         {% endif %}
       </div>
     {% endfor %}
     <div id="new-messages"></div>
   </div>
 
-  <form hx-post="/chat/send" hx-target="#new-messages" hx-swap="beforeend" hx-on::after-request="this.reset(); document.getElementById('chat-window').scrollTop = document.getElementById('chat-window').scrollHeight;" style="display: flex; gap: 0.75rem;">
-    <input type="text" name="message" placeholder="Compartilhe uma percepção técnica ou bastidor sobre uma seleção ou jogo..." required style="flex: 1; padding: 0.75rem 1rem; border-radius: 12px; border: 1px solid #cbd5e1; font-size: 0.95rem;">
-    <button type="submit" class="secondary">Enviar</button>
-  </form>
+  <div id="chat-compose">
+    {% include "partials/chat_compose.html" %}
+  </div>
 </div>
+
+<script>
+  function scrollChatToBottom() {
+    const w = document.getElementById('chat-window');
+    if (!w) return;
+    requestAnimationFrame(function() {
+      w.scrollTop = w.scrollHeight;
+    });
+  }
+  document.addEventListener('DOMContentLoaded', scrollChatToBottom);
+  document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target && evt.detail.target.id === 'new-messages') {
+      scrollChatToBottom();
+    }
+  });
+  document.body.addEventListener('htmx:afterRequest', function(evt) {
+    const form = evt.detail.elt;
+    if (form && form.id === 'chat-form' && evt.detail.successful) {
+      if (!form.querySelector('input[disabled]')) {
+        form.reset();
+      }
+      scrollChatToBottom();
+    }
+  });
+</script>
 
 <style>
   .chat-bubble {
     padding: 0.75rem 1rem;
     border-radius: 16px;
     margin-bottom: 1rem;
-    max-width: 85%;
+    max-width: 90%;
     font-size: 0.9rem;
-    line-height: 1.5;
+    line-height: 1.55;
+    white-space: pre-wrap;
   }
   .chat-bubble.user {
     background: #e2e8f0;
@@ -49,9 +95,10 @@
     align-self: flex-start;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
   }
-  .chat-bubble.ai.valid {
-    border-left: 4px solid var(--green);
-  }
+  .chat-bubble.ai.valid { border-left: 4px solid var(--green); }
+  .chat-bubble.ai.verdict-supports { border-left: 4px solid #22c55e; }
+  .chat-bubble.ai.verdict-caution { border-left: 4px solid #eab308; }
+  .chat-bubble.ai.verdict-against { border-left: 4px solid #dc2626; }
   .status-tag {
     font-size: 0.7rem;
     font-weight: 700;
@@ -59,5 +106,15 @@
     margin-top: 0.5rem;
     text-transform: uppercase;
   }
+  .verdict-tag {
+    font-size: 0.7rem;
+    font-weight: 700;
+    margin-top: 0.5rem;
+    text-transform: uppercase;
+  }
+  .verdict-tag.verdict-supports { color: #16a34a; }
+  .verdict-tag.verdict-caution { color: #ca8a04; }
+  .verdict-tag.verdict-against { color: #dc2626; }
+  .verdict-tag.verdict-neutral { color: var(--muted); }
 </style>
 {% endblock %}
