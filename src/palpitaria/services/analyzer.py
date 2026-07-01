@@ -86,6 +86,7 @@ class FixtureAnalysis:
     home_stats_meta: dict | None = None  # Perfil híbrido (API + web) — mandante
     away_stats_meta: dict | None = None  # Perfil híbrido (API + web) — visitante
     criteria_brief: dict | None = None  # Resumo gerencial dos achados numéricos
+    strategy_card: dict | None = None  # 2–3 estratégias estruturadas (exchange)
     venue_stadium: str | None = None
     venue_city: str | None = None
     venue_state: str | None = None
@@ -833,6 +834,9 @@ def persist_analysis(
     report.match_context_json = (
         json.dumps(analysis.match_context, ensure_ascii=False) if analysis.match_context else None
     )
+    report.strategy_json = (
+        json.dumps(analysis.strategy_card, ensure_ascii=False) if analysis.strategy_card else None
+    )
     report.analyzed_at = datetime.utcnow()
 
     code = competition_code
@@ -863,6 +867,8 @@ def attach_saved_reports(db: Session, analyses: list[FixtureAnalysis]) -> None:
             analysis.match_context = json.loads(report.match_context_json)
         elif not analysis.excluded and report.llm_explanation:
             analysis.match_context = default_match_context()
+        if report.strategy_json:
+            analysis.strategy_card = json.loads(report.strategy_json)
 
 
 def count_teams_with_profiles(db: Session) -> tuple[int, int]:

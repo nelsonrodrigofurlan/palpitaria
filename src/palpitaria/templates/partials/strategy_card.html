@@ -1,0 +1,39 @@
+{% if a.strategy_card and a.strategy_card.strategies %}
+<div class="strategy-card" style="margin-top: 1.5rem; background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%); border: 1px solid #e9d5ff; border-radius: 14px; padding: 1.1rem 1.25rem;">
+  <h3 style="font-size: 0.95rem; font-weight: 800; color: #6b21a8; margin: 0 0 0.35rem; text-transform: uppercase; letter-spacing: 0.04em;">
+    📋 Cartão de Estratégias
+  </h3>
+  {% if a.strategy_card.headline %}
+  <p style="font-size: 0.88rem; color: #581c87; margin: 0 0 1rem; line-height: 1.45;">{{ a.strategy_card.headline }}</p>
+  {% endif %}
+
+  <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+    {% for s in a.strategy_card.strategies %}
+    <div style="background: white; border-radius: 10px; padding: 0.85rem 1rem; border: 1px solid #e9d5ff;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.35rem;">
+        <strong style="font-size: 0.8rem; color: #7c3aed; text-transform: uppercase;">{{ s.label }}</strong>
+        <span style="font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 6px; background: {% if s.risk == 'alto' %}#fee2e2{% elif s.risk == 'baixo' %}#dcfce7{% else %}#fef9c3{% endif %}; color: {% if s.risk == 'alto' %}#991b1b{% elif s.risk == 'baixo' %}#166534{% else %}#854d0e{% endif %};">
+          Risco {{ s.risk or 'médio' }}
+        </span>
+      </div>
+      <div style="font-size: 0.92rem; font-weight: 700; color: var(--text); margin-bottom: 0.25rem;">
+        {{ s.market }}
+        {% if s.side and s.side != 'NEUTRO' %}
+        <span style="font-size: 0.72rem; font-weight: 600; color: var(--muted); margin-left: 0.35rem;">{{ s.side }}</span>
+        {% endif %}
+        {% if s.odds_hint and s.odds_hint != '—' %}
+        <span style="font-size: 0.75rem; font-weight: 600; color: var(--blue); margin-left: 0.35rem;">@ {{ s.odds_hint }}</span>
+        {% endif %}
+      </div>
+      <p style="font-size: 0.8rem; color: var(--muted); margin: 0; line-height: 1.4;">{{ s.thesis }}</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if a.strategy_card.avoid %}
+  <p style="font-size: 0.78rem; color: #9f1239; margin: 0.85rem 0 0; padding-top: 0.65rem; border-top: 1px dashed #e9d5ff;">
+    ⚠️ Evitar: {{ a.strategy_card.avoid }}
+  </p>
+  {% endif %}
+</div>
+{% endif %}

@@ -198,6 +198,8 @@
         </div>
         {% endif %}
 
+        {% include "partials/strategy_card.html" %}
+
         {% with title="🎯 Recomendação Principal", bg="linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)", border="#bfdbfe", title_color="var(--blue)", text_color="#1e40af", subtitle="" %}
           {% include "partials/recommendation.html" %}
         {% endwith %}
@@ -314,6 +316,8 @@
         </div>
       </div>
       {% endif %}
+
+      {% include "partials/strategy_card.html" %}
 
       {% with title="🎲 Palpite Alternativo", bg="linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)", border="#fcd34d", title_color="#92400e", text_color="#78350f", subtitle="" %}
         {% include "partials/recommendation.html" %}

@@ -86,6 +86,7 @@ class FixtureReport(Base):
     llm_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     best_pick_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     match_context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    strategy_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     analyzed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     fixture: Mapped["Fixture"] = relationship(back_populates="report")

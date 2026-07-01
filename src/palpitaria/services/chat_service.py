@@ -311,6 +311,12 @@ def _profile_summary(db: Session, team_id: int, team_name: str) -> dict[str, Any
     if not profile:
         return {"name": team_name, "ready": False}
     raw = json.loads(profile.raw_json or "{}")
+    insights = None
+    if profile.insights_json:
+        try:
+            insights = json.loads(profile.insights_json)
+        except json.JSONDecodeError:
+            insights = None
     return {
         "name": team_name,
         "ready": True,
@@ -322,6 +328,7 @@ def _profile_summary(db: Session, team_id: int, team_name: str) -> dict[str, Any
         "over_15_rate": profile.over_15_rate,
         "win_rate": profile.win_rate,
         "source": raw.get("source"),
+        "insights": insights,
     }
 
 
@@ -329,12 +336,16 @@ def _report_summary(report: FixtureReport | None) -> dict[str, Any] | None:
     if report is None:
         return None
     best_pick = json.loads(report.best_pick_json) if report.best_pick_json else None
+    strategy_card = json.loads(report.strategy_json) if report.strategy_json else None
+    match_context = json.loads(report.match_context_json) if report.match_context_json else None
     return {
         "analyzed_at": report.analyzed_at.isoformat() if report.analyzed_at else None,
         "excluded": report.excluded,
         "exclusion_reasons": json.loads(report.exclusion_reasons_json or "[]"),
         "goal_potential_score": report.goal_potential_score,
         "best_pick": best_pick,
+        "strategy_card": strategy_card,
+        "match_context": match_context,
         "llm_explanation": (report.llm_explanation or "")[:1200],
         "criteria": json.loads(report.criteria_json or "[]")[:8],
     }
@@ -370,6 +381,24 @@ def _odds_for_match(
                 )
             return {"home": game.get("home_team"), "away": game.get("away_team"), "markets": slim}
     return None
+
+
+def _message_wants_fresh_web(message: str) -> bool:
+    """Web ao vivo só quando o usuário pede notícia/atualização explícita."""
+    norm = _normalize_text(message)
+    tokens = (
+        "noticia",
+        "noticias",
+        "atualiz",
+        "agora na web",
+        "buscar na web",
+        "pesquisar",
+        "escalacao",
+        "escalação",
+        "lesao confirmada",
+        "lesão confirmada",
+    )
+    return any(t in norm for t in tokens)
 
 
 def _message_suggests_deep_dive(message: str) -> bool:
@@ -439,8 +468,10 @@ def build_chat_context(db: Session, message: str, user_id: int | None) -> dict[s
                     "exclusion_reasons": live.exclusion_reasons,
                     "goal_potential_score": live.goal_potential_score,
                     "best_pick": live.best_pick,
+                    "strategy_card": live.strategy_card,
                     "strong_criteria": live.strong_criteria_count,
                     "criteria_brief": live.criteria_brief,
+                    "match_context": live.match_context,
                 },
                 "home_profile": _profile_summary(db, home.id, home_name),
                 "away_profile": _profile_summary(db, away.id, away_name),
@@ -449,7 +480,7 @@ def build_chat_context(db: Session, message: str, user_id: int | None) -> dict[s
         )
 
     web_snippets = ""
-    if fixtures and _message_suggests_deep_dive(message):
+    if fixtures and _message_wants_fresh_web(message):
         try:
             web_snippets = _fetch_web_snippets_for_fixture(fixtures[0])[:3500]
         except Exception:
@@ -476,6 +507,7 @@ def build_chat_context(db: Session, message: str, user_id: int | None) -> dict[s
         "recent_chat": prior,
         "banter_hook": banter_hook,
         "product_focus": "Mercados de gols (Over) homologados; 1X2 e Lay CS como alternativas.",
+        "context_source": "Banco Palpitaria (pipeline, perfis, odds). Web só se o usuário pedir notícias frescas.",
         "official_picks_immutable": (
             "Palpites da home/pipeline não mudam por este chat. "
             "Respostas aqui são orientação; homologação só via pipeline."

@@ -63,6 +63,18 @@ Marcar import com `[BF:{id}]` na descrição para idempotência. Após import ou
 
 Mapeamento filial (resumo): Over 0,5 / 1,5 / 2,5 BACK → filiais over; 1X2 → match odds; AH +1 → Handicap; Under 4,5 → under; Correct Score LAY → lay CS; demais LAY/BACK trader → filiais Trader.
 
+## Arquitetura em camadas (análise do dia)
+
+| Camada | O quê | Tokens / custo |
+|--------|--------|----------------|
+| **0** | Sync API (fixtures, odds) | Quase zero LLM |
+| **1** | Filtro numérico anti-zero (`analyze_fixture`) | Zero LLM |
+| **2** | LLM curto: `refine_best_pick` + `explain_analysis` + **`build_strategy_card`** | 1 chamada/jogo candidato+descartado |
+| **3** | Web stalking **condicional** — perfil híbrido se stale (`wc_web_profile_refresh_hours`, default 48h); bastidores/contexto só se cache ausente | Só quando necessário |
+| **4** | Chat `/chat` — contexto do **banco** (report, strategy_card, perfis, odds); web ao vivo só se usuário pedir notícias | Sem re-scraping padrão |
+
+**FixtureStrategyCard:** `services/strategy_card.py` → JSON 2–3 estratégias (mercado, tese, risco, odd hint) → `fixture_reports.strategy_json` → partial `partials/strategy_card.html` na home.
+
 ## Especialização por Campeonato
 
 O Palpitaria FC opera com "Módulos de Especialista" para cada competição, pois cada uma possui dinâmicas únicas:

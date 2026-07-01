@@ -469,18 +469,31 @@ def _execute_analysis_pipeline(db: Session, comp_code: str):
 
     add_log(f"Iniciando pipeline de {len(analyses)} jogos de {comp_code} (web perfis → API → scrap → recomendação)...")
 
-    add_log(f"[0/3] Perfis híbridos — API {comp_code} + histórico web das seleções de hoje...")
-    web_profiles = enrich_today_team_profiles(db, log_callback=add_log, force_refresh=True, competition_code=comp_code)
-    add_log(f"  -> {web_profiles} perfil(is) enriquecido(s) via web")
+    add_log(f"[0/3] Perfis híbridos — refresh condicional (API + web, cache {settings.wc_web_profile_refresh_hours}h)...")
+    web_profiles = enrich_today_team_profiles(
+        db, log_callback=add_log, force_refresh=False, competition_code=comp_code
+    )
+    add_log(f"  -> {web_profiles} perfil(is) atualizado(s) via web")
 
     analyses = analyze_upcoming(db, limit=50, for_today_only=True, competition_code=comp_code)
-    add_log(f"Reavaliando {len(analyses)} jogos após perfis web...")
+    add_log(f"Reavaliando {len(analyses)} jogos após perfis...")
+
+    from palpitaria.models import FixtureReport
+    from palpitaria.services.chat_service import _odds_for_match
+    from palpitaria.services.strategy_card import build_strategy_card
 
     for analysis in analyses:
         fixture = db.query(Fixture).filter_by(id=analysis.fixture_id).one()
         add_log(f"[1/3] Números — {analysis.home_name} x {analysis.away_name} (score {analysis.goal_potential_score})")
 
-        add_log("  [2/3] Scraping bastidores + contexto de jogo...")
+        saved_report = db.query(FixtureReport).filter_by(fixture_id=analysis.fixture_id).one_or_none()
+        cached_ctx = None
+        if saved_report and saved_report.match_context_json:
+            try:
+                cached_ctx = json.loads(saved_report.match_context_json)
+            except json.JSONDecodeError:
+                cached_ctx = None
+
         home_insights, away_insights, match_context = enrich_fixture_analysis(
             db,
             fixture_id=analysis.fixture_id,
@@ -494,18 +507,23 @@ def _execute_analysis_pipeline(db: Session, comp_code: str):
             away_insights=analysis.away_insights,
             log_callback=add_log,
             competition_code=comp_code,
+            cached_match_context=cached_ctx,
         )
         analysis.home_insights = home_insights
         analysis.away_insights = away_insights
         analysis.match_context = match_context or default_match_context()
 
-        add_log("  [3/3] Decisão de mercado (LLM + web + bastidores)...")
+        add_log("  [3/3] Decisão + cartão de estratégias (LLM)...")
         settings.openai_api_key = llm_key
         settings.openai_base_url = llm_base
-        
+
         analysis.best_pick = refine_best_pick(analysis)
         explanation = explain_analysis(analysis)
         analysis.llm_explanation = explanation
+        analysis.strategy_card = build_strategy_card(
+            analysis,
+            odds=_odds_for_match(db, analysis.home_name, analysis.away_name, comp_code),
+        )
         persist_analysis(db, analysis, explanation, competition_code=comp_code)
         explained += 1
         if not analysis.excluded:

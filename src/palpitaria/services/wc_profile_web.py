@@ -239,19 +239,33 @@ def fetch_api_finished_matches(team: Team) -> list[dict]:
 
 
 def profile_needs_refresh(profile: TeamProfile | None, *, force: bool = False) -> bool:
-    """Hybrid web+API profiles refresh on each analyze when force=True."""
+    """Refresh híbrido API+web só quando ausente, não-híbrido, forçado ou stale."""
     if force or profile is None:
         return True
     raw = json.loads(profile.raw_json or "{}")
     if raw.get("source") not in ("hybrid", "web_research"):
         return True
-    if settings.wc_web_profile_refresh_hours <= 0:
+    hours = settings.wc_web_profile_refresh_hours
+    if hours <= 0:
         return False
     computed = profile.computed_at
     if computed.tzinfo is not None:
         computed = computed.replace(tzinfo=None)
     age = datetime.utcnow() - computed
-    return age > timedelta(hours=settings.wc_web_profile_refresh_hours)
+    return age > timedelta(hours=hours)
+
+
+def insights_need_refresh(profile: TeamProfile | None) -> bool:
+    """Bastidores: refresh só se ausentes ou perfil mais antigo que wc_insights_refresh_hours."""
+    if profile is None or not profile.insights_json:
+        return True
+    hours = settings.wc_insights_refresh_hours
+    if hours <= 0:
+        return False
+    computed = profile.computed_at
+    if computed.tzinfo is not None:
+        computed = computed.replace(tzinfo=None)
+    return datetime.utcnow() - computed > timedelta(hours=hours)
 
 
 def teams_playing_today(db: Session, tz_name: str | None = None, competition_code: str | None = None) -> list[Team]:

@@ -4,6 +4,7 @@ import json
 
 from sqlalchemy.orm import Session
 
+from palpitaria.services.ingest import latest_profile
 from palpitaria.services.llm_client import chat_completion
 from palpitaria.services.match_context_utils import default_match_context
 from palpitaria.services.llm_utils import _parse_json_from_llm
@@ -365,6 +366,16 @@ def refresh_team_insights(
     return insights
 
 
+def _load_cached_insights(db: Session, team_id: int) -> dict | None:
+    profile = latest_profile(db, team_id)
+    if not profile or not profile.insights_json:
+        return None
+    try:
+        return json.loads(profile.insights_json)
+    except json.JSONDecodeError:
+        return None
+
+
 def enrich_fixture_analysis(
     db: Session,
     *,
@@ -379,14 +390,16 @@ def enrich_fixture_analysis(
     away_insights: dict | None,
     log_callback=None,
     competition_code: str | None = None,
+    cached_match_context: dict | None = None,
 ) -> tuple[dict | None, dict | None, dict | None]:
-    """Coleta bastidores + contexto de jogo antes da recomendação LLM."""
+    """Coleta bastidores + contexto de jogo antes da recomendação LLM (web condicional)."""
 
     def log(msg: str) -> None:
         if log_callback:
             log_callback(msg)
 
     from palpitaria.models import Team
+    from palpitaria.services.wc_profile_web import insights_need_refresh
 
     home_team = db.query(Team).filter_by(id=home_team_id).one_or_none()
     away_team = db.query(Team).filter_by(id=away_team_id).one_or_none()
@@ -394,32 +407,45 @@ def enrich_fixture_analysis(
     away_ext = away_team.external_id if away_team else None
 
     if excluded:
-        log("  [2/3] Coletando bastidores + contexto (mesmo descartado — informa a decisão)...")
+        log("  [2/3] Bastidores + contexto (descartado — usa cache quando possível)...")
     else:
-        log("  [2/3] Scraping bastidores + contexto de jogo...")
+        log("  [2/3] Bastidores + contexto (refresh condicional)...")
 
-    log(f"  [2a] Bastidores — {home_name}...")
-    refreshed_home = refresh_team_insights(
-        db, home_team_id, home_name, competition_code=competition_code
-    )
-    home = refreshed_home or home_insights
+    home_profile = latest_profile(db, home_team_id)
+    if insights_need_refresh(home_profile):
+        log(f"  [2a] Bastidores — {home_name} (web)...")
+        refreshed_home = refresh_team_insights(
+            db, home_team_id, home_name, competition_code=competition_code
+        )
+        home = refreshed_home or home_insights or _load_cached_insights(db, home_team_id)
+    else:
+        log(f"  [2a] Bastidores — {home_name} (cache)")
+        home = home_insights or _load_cached_insights(db, home_team_id)
 
-    log(f"  [2b] Bastidores — {away_name}...")
-    refreshed_away = refresh_team_insights(
-        db, away_team_id, away_name, competition_code=competition_code
-    )
-    away = refreshed_away or away_insights
+    away_profile = latest_profile(db, away_team_id)
+    if insights_need_refresh(away_profile):
+        log(f"  [2b] Bastidores — {away_name} (web)...")
+        refreshed_away = refresh_team_insights(
+            db, away_team_id, away_name, competition_code=competition_code
+        )
+        away = refreshed_away or away_insights or _load_cached_insights(db, away_team_id)
+    else:
+        log(f"  [2b] Bastidores — {away_name} (cache)")
+        away = away_insights or _load_cached_insights(db, away_team_id)
 
-    match_context = None
-    log(f"  [2c] Contexto de jogo — clima, árbitro, gramado...")
-    match_context = collect_match_context(
-        home_name,
-        away_name,
-        external_id=external_id,
-        home_external_id=home_ext,
-        away_external_id=away_ext,
-        db=db,
-        competition_code=competition_code,
-    )
+    match_context = cached_match_context
+    if match_context:
+        log("  [2c] Contexto de jogo — cache do relatório salvo")
+    else:
+        log("  [2c] Contexto de jogo — clima, árbitro, gramado (web)...")
+        match_context = collect_match_context(
+            home_name,
+            away_name,
+            external_id=external_id,
+            home_external_id=home_ext,
+            away_external_id=away_ext,
+            db=db,
+            competition_code=competition_code,
+        )
 
     return home, away, match_context

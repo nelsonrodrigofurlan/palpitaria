@@ -189,9 +189,10 @@ class Settings(BaseSettings):
     min_sample_for_win_rate_favorite: int = 3
     max_plausible_team_goals_per_match: int = 6
 
-    # Copa — perfis híbridos API+web sempre; refresh configurável
+    # Copa — perfis híbridos API+web; refresh condicional (horas)
     wc_web_profile_min_matches: int = 1  # estreias Copa: 1 placar explícito já destrava o filtro
-    wc_web_profile_refresh_hours: int = 0  # 0 = refresh every analyze run
+    wc_web_profile_refresh_hours: int = 48  # 0 = só refresh quando perfil ausente/não-híbrido
+    wc_insights_refresh_hours: int = 48  # bastidores por seleção
 
     # Leitura LLM exibida no card (comentário inicial)
     llm_explanation_max_chars: int = 1500
