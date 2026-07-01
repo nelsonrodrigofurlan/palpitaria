@@ -48,6 +48,14 @@ def test_bet_local_period_uses_app_timezone():
     assert bet_local_period(utc) == (2026, 5)
 
 
+def test_betfair_csv_net_pl_discounts_commission_on_green():
+    from palpitaria.services.ledger import betfair_csv_net_pl
+
+    # Export CSV mostraria Lucro/Perda = 30.00; líquido com 6,5% = 28.05
+    assert betfair_csv_net_pl(100, 1.30, "WIN", 6.5, side="BACK") == pytest.approx(28.05)
+    assert betfair_csv_net_pl(100, 1.30, "LOSS", 6.5, side="BACK") == -100
+
+
 def test_close_past_months_archives_older_than_previous_month(db_session):
     from palpitaria.models import Bet, Branch, BranchMonthlySummary
 

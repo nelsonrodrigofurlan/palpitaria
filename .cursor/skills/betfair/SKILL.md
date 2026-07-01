@@ -33,11 +33,35 @@ Skill de contexto e workflow. Leia [context.md](context.md) antes de propor cód
 | Esporte | Futebol |
 | Mercados MVP | Over 0,5 + Over 1,5 + Over 2,5 (Prioridade Total) |
 | Filosofia | **Foco em Gols** — Priorizar mercados Over; **Liberdade de Descarte Total** se houver dúvida ou dados insuficientes |
-| Filiais | Cada tipo de entrada = unidade com P&L próprio |
+| Filiais | Cada tipo de entrada = unidade com P&L próprio; comissão % por filial (padrão 6,5%) |
 | Saída Homologada | Apenas mercados de Gols com base sólida fundamentada |
 | Saída Alternativa | Vencedor (1X2) e Lay Correct Score (apenas se houver critério mínimo; senão descarta) |
 | Especialização | **Skills por Campeonato** — Ver pasta `.cursor/skills/competitions/` |
 | Stack | Python para dados/ML; frontend FastAPI + HTMX |
+
+## Filiais — lançamento manual e import CSV
+
+O P&L no app é **sempre líquido**, com a **comissão da filial** descontada nos greens — igual ao lançamento manual em `/branches`.
+
+| Tipo | GREEN (líquido) | RED |
+|------|-----------------|-----|
+| BACK | `stake × (odd − 1) × (1 − comissão%)` | `−stake` |
+| LAY | `stake × (1 − comissão%)` | `−stake × (odd − 1)` |
+
+### Import do CSV de apostas liquidadas (exchange)
+
+Script: `scripts/import_betfair_csv.py`. Colunas usadas: `Realizada`, `Descrição`, `Tipo`, `Cotações`, `Valor Apostado (R$)`, `Status`.
+
+**Regra obrigatória:** a coluna **Lucro/Perda** do export é **bruta** nos greens. **Nunca** gravar esse valor direto no `profit_loss`. Usar `betfair_csv_net_pl()` / `compute_bet_pl()` com:
+
+- `stake` e `odd` do CSV
+- `outcome` WIN/LOSS a partir de `Status`
+- `commission_rate` da **filial** de destino
+- `side` da filial (BACK ou LAY — hedges/trader vão para filiais LAY/BACK corretas)
+
+Marcar import com `[BF:{id}]` na descrição para idempotência. Após import ou mudança de comissão: `python scripts/import_betfair_csv.py --recalc`.
+
+Mapeamento filial (resumo): Over 0,5 / 1,5 / 2,5 BACK → filiais over; 1X2 → match odds; AH +1 → Handicap; Under 4,5 → under; Correct Score LAY → lay CS; demais LAY/BACK trader → filiais Trader.
 
 ## Especialização por Campeonato
 

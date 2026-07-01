@@ -88,14 +88,6 @@
       {% endif %}
     </div>
 
-    {% if stats[b.id].archived_only and stats[b.id].bet_count > 0 %}
-    <p style="margin: 0 0 1rem; font-size: 0.75rem; color: var(--muted); line-height: 1.4; background: #f8fafc; padding: 0.5rem 0.75rem; border-radius: 8px; border: 1px solid #e2e8f0;">
-      Mês consolidado{% if stats[b.id].closed_at %} em {{ stats[b.id].closed_at.strftime('%d/%m/%Y') }}{% endif %} — totais do fechamento mensal.
-      Entradas individuais deste período não estão mais no ledger ativo.
-      <a href="/historico" style="color: var(--blue);">Ver histórico</a>
-    </p>
-    {% endif %}
-
     <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 1.5rem 0;">
 
     <form action="/branches/add-bet" method="POST" style="display: flex; flex-direction: column; gap: 0.75rem;">

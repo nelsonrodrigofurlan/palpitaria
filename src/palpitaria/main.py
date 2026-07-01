@@ -49,6 +49,7 @@ from palpitaria.services.ledger import (
     bet_competition_expr,
     bet_created_at_for_period,
     bet_in_period,
+    bet_local_period,
     branch_period_choices,
     close_past_months,
     compute_bet_pl,
@@ -842,7 +843,7 @@ def list_branches(
             "loss_count": loss_count,
             "bet_count": bet_count,
             "hit_rate_pct": hit_rate_pct(win_count, bet_count),
-            "bets": bets[:50],
+            "bets": bets,
             "archived_only": archived_only,
             "closed_at": closed_at,
         }
@@ -869,81 +870,84 @@ def list_branches(
 @app.get("/historico", response_class=HTMLResponse)
 def list_historico(request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
     from palpitaria.models import BranchMonthlySummary, Branch, Bet
-    from sqlalchemy import extract
     from collections import defaultdict
 
     close_past_months(db)
     cy, cm = current_period()
 
-    # 1. Buscar fechamentos passados
-    query = (
+    branches = db.query(Branch).filter(Branch.user_id == user.id).all()
+    branch_by_id = {b.id: b for b in branches}
+
+    summaries = (
         db.query(BranchMonthlySummary)
         .join(Branch)
         .filter(Branch.user_id == user.id)
+        .order_by(
+            BranchMonthlySummary.year.desc(),
+            BranchMonthlySummary.month.desc(),
+            BranchMonthlySummary.branch_id,
+        )
+        .all()
     )
-    summaries = query.order_by(
-        BranchMonthlySummary.year.desc(),
-        BranchMonthlySummary.month.desc(),
-        BranchMonthlySummary.branch_id,
-    ).all()
+
+    all_bets = (
+        db.query(Bet)
+        .join(Branch)
+        .filter(Branch.user_id == user.id)
+        .all()
+    )
 
     rows = []
-    
-    # 2. Calcular mês ativo "on-line" para cada filial (Consolidado Global)
-    branches = db.query(Branch).filter(Branch.user_id == user.id).all()
-    for b in branches:
-        bets = db.query(Bet).filter(
-            Bet.branch_id == b.id,
-            extract("year", Bet.created_at) == cy,
-            extract("month", Bet.created_at) == cm
-        ).all()
-        
-        if not bets:
+    live_period_keys: set[tuple[int, int, int]] = set()
+
+    # Entradas individuais no ledger — fonte primária por filial/mês
+    by_period: dict[tuple[int, int, int], list[Bet]] = defaultdict(list)
+    for bet in all_bets:
+        y, m = bet_local_period(bet.created_at)
+        by_period[(y, m, bet.branch_id)].append(bet)
+        live_period_keys.add((y, m, bet.branch_id))
+
+    for (year, month, branch_id), bets in by_period.items():
+        branch = branch_by_id.get(branch_id)
+        if not branch:
             continue
-            
         wins = sum(1 for bet in bets if bet.outcome == "WIN")
         losses = sum(1 for bet in bets if bet.outcome == "LOSS")
         pending = sum(1 for bet in bets if bet.outcome == "PENDING")
-        total_pl = sum(bet.profit_loss for bet in bets)
-        
-        # Se for LAY, a stake (risco) é a responsabilidade
-        if b.side == "LAY":
-            total_stake = sum(bet.stake * (bet.odds - 1) for bet in bets)
+        total_pl = round(sum(bet.profit_loss for bet in bets), 2)
+        if branch.side == "LAY":
+            total_stake = round(sum(bet.stake * (bet.odds - 1) for bet in bets), 2)
         else:
-            total_stake = sum(bet.stake for bet in bets)
-            
-        bet_count = len(bets)
-        
-        # Coletar códigos de competição para o mês ativo
+            total_stake = round(sum(bet.stake for bet in bets), 2)
         comp_codes = {bet.competition_code or "WC" for bet in bets}
-        comp_label = ", ".join(sorted(comp_codes))
-        
         rows.append({
-            "period": period_label(cy, cm),
-            "year": cy,
-            "month": cm,
-            "branch_name": b.name,
-            "bet_count": bet_count,
+            "period": period_label(year, month),
+            "year": year,
+            "month": month,
+            "branch_name": branch.name,
+            "bet_count": len(bets),
             "win_count": wins,
             "loss_count": losses,
             "pending_count": pending,
             "total_stake": total_stake,
             "total_pl": total_pl,
-            "hit_rate_pct": hit_rate_pct(wins, bet_count),
+            "hit_rate_pct": hit_rate_pct(wins, len(bets)),
             "closed_at": None,
-            "competition_code": comp_label,
-            "is_active": True,
-            "side": b.side
+            "competition_code": ", ".join(sorted(comp_codes)),
+            "is_active": (year, month) == (cy, cm),
+            "side": branch.side,
         })
 
-    # 3. Adicionar fechamentos passados (Consolidando competições se houver)
+    # Consolidados só quando não há entradas individuais naquele mês/filial
     consolidated = defaultdict(lambda: {
         "bet_count": 0, "win_count": 0, "loss_count": 0, "pending_count": 0,
         "total_stake": 0.0, "total_pl": 0.0, "closed_at": None, "branch_name": "",
-        "comp_codes": set(), "side": "BACK"
+        "comp_codes": set(), "side": "BACK",
     })
-    
+
     for s in summaries:
+        if (s.year, s.month, s.branch_id) in live_period_keys:
+            continue
         key = (s.year, s.month, s.branch_id)
         d = consolidated[key]
         d["bet_count"] += s.bet_count
@@ -958,11 +962,8 @@ def list_historico(request: Request, db: Session = Depends(get_db), user=Depends
         if not d["closed_at"] or s.closed_at > d["closed_at"]:
             d["closed_at"] = s.closed_at
 
-    # Ordenar chaves dos consolidados por data desc
-    sorted_keys = sorted(consolidated.keys(), key=lambda x: (x[0], x[1]), reverse=True)
-    for key in sorted_keys:
+    for key in sorted(consolidated.keys(), key=lambda x: (x[0], x[1]), reverse=True):
         d = consolidated[key]
-        comp_label = ", ".join(sorted(d["comp_codes"]))
         rows.append({
             "period": period_label(key[0], key[1]),
             "year": key[0],
@@ -976,9 +977,9 @@ def list_historico(request: Request, db: Session = Depends(get_db), user=Depends
             "total_pl": d["total_pl"],
             "hit_rate_pct": hit_rate_pct(d["win_count"], d["bet_count"]),
             "closed_at": d["closed_at"],
-            "competition_code": comp_label,
+            "competition_code": ", ".join(sorted(d["comp_codes"])),
             "is_active": False,
-            "side": d["side"]
+            "side": d["side"],
         })
 
     rows.sort(
@@ -990,7 +991,6 @@ def list_historico(request: Request, db: Session = Depends(get_db), user=Depends
         )
     )
 
-    # Calcular somas gerais
     current_month_pl = sum(r["total_pl"] for r in rows if r.get("is_active"))
     total_history_pl = sum(r["total_pl"] for r in rows)
 

@@ -60,6 +60,26 @@ def infer_branch_side(name: str, slug: str = "", description: str = "") -> str:
     return "BACK"
 
 
+def is_betfair_imported_bet(bet: Bet) -> bool:
+    """Entrada importada do CSV Betfair (marcador [BF:id] na descrição)."""
+    return "[BF:" in (bet.description or "")
+
+
+def betfair_csv_net_pl(
+    stake: float,
+    odds: float,
+    outcome: str,
+    commission_rate: float,
+    *,
+    side: str = "BACK",
+) -> float:
+    """
+    P&L líquido para import do CSV Betfair.
+    A coluna Lucro/Perda do export é bruta nos greens; o app usa a mesma regra do lançamento manual.
+    """
+    return compute_bet_pl(stake, odds, outcome, commission_rate, side=side)
+
+
 def migrate_branch_sides(db: Session) -> None:
     """Preenche side em filiais antigas e recalcula P&L de entradas já fechadas."""
     branches = db.query(Branch).all()
