@@ -257,6 +257,14 @@ def _render_home(request: Request, db: Session, user, comp_code: str | None = No
             odds_list = []
 
     from palpitaria.services.pipeline_trigger import pipeline_used_today
+    from palpitaria.services.chat_service import _odds_for_match
+    from palpitaria.services.strategy_card import enrich_strategy_card_display_mode
+
+    for item in analyses:
+        enrich_strategy_card_display_mode(
+            item,
+            _odds_for_match(db, item.home_name, item.away_name, comp_code),
+        )
 
     pipeline_used, pipeline_today_run = pipeline_used_today(db, comp_code)
     pipeline_running_here = PIPELINE_STATE["running"] and PIPELINE_STATE.get("comp") == comp_code
@@ -518,12 +526,13 @@ def _execute_analysis_pipeline(db: Session, comp_code: str):
         settings.openai_base_url = llm_base
 
         analysis.best_pick = refine_best_pick(analysis)
-        explanation = explain_analysis(analysis)
-        analysis.llm_explanation = explanation
         analysis.strategy_card = build_strategy_card(
             analysis,
             odds=_odds_for_match(db, analysis.home_name, analysis.away_name, comp_code),
         )
+        has_card = bool(analysis.strategy_card and analysis.strategy_card.get("strategies"))
+        explanation = explain_analysis(analysis, compact=has_card)
+        analysis.llm_explanation = explanation
         persist_analysis(db, analysis, explanation, competition_code=comp_code)
         explained += 1
         if not analysis.excluded:

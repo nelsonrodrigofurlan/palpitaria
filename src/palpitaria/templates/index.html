@@ -133,8 +133,26 @@
       </div>
 
       <div class="card-content" style="margin-top: 1.5rem;">
+        {% set card_mode = a.strategy_card.display_mode if a.strategy_card and a.strategy_card.display_mode else 'goals_primary' %}
+
+        {% if card_mode == 'handicap_primary' %}
+          {% with strategy_primary=True, strategy_compact=False %}
+            {% include "partials/strategy_card.html" %}
+          {% endwith %}
+          {% with title="🎯 Palpite oficial", bg="linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)", border="#bfdbfe", title_color="var(--blue)", text_color="#1e40af", subtitle="Resumo — entradas no cartão acima", compact=True %}
+            {% include "partials/recommendation.html" %}
+          {% endwith %}
+        {% else %}
+          {% with title="🎯 Recomendação Principal", bg="linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)", border="#bfdbfe", title_color="var(--blue)", text_color="#1e40af", subtitle="", compact=False %}
+            {% include "partials/recommendation.html" %}
+          {% endwith %}
+          {% with strategy_primary=False, strategy_compact=True %}
+            {% include "partials/strategy_card.html" %}
+          {% endwith %}
+        {% endif %}
+
         {% if a.llm_explanation %}
-        <div class="llm-box">
+        <div class="llm-box" style="margin-top: 1rem; font-size: 0.9rem;">
           {{ a.llm_explanation }}
         </div>
         {% endif %}
@@ -197,12 +215,6 @@
           {% endif %}
         </div>
         {% endif %}
-
-        {% include "partials/strategy_card.html" %}
-
-        {% with title="🎯 Recomendação Principal", bg="linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)", border="#bfdbfe", title_color="var(--blue)", text_color="#1e40af", subtitle="" %}
-          {% include "partials/recommendation.html" %}
-        {% endwith %}
       </div>
     </div>
     {% endfor %}
@@ -274,14 +286,32 @@
     </div>
 
     <div class="card-content" style="margin-top: 1.5rem;">
-      <ul style="font-size: 0.85rem; color: #991b1b; padding-left: 1.2rem;">
+      <ul style="font-size: 0.85rem; color: #991b1b; padding-left: 1.2rem; margin-bottom: 1rem;">
         {% for reason in a.exclusion_reasons %}
         <li>{{ reason }}</li>
         {% endfor %}
       </ul>
 
+      {% set card_mode = a.strategy_card.display_mode if a.strategy_card and a.strategy_card.display_mode else 'handicap_primary' %}
+
+      {% if card_mode == 'handicap_primary' %}
+        {% with strategy_primary=True, strategy_compact=False %}
+          {% include "partials/strategy_card.html" %}
+        {% endwith %}
+        {% with title="🎲 Palpite Alternativo", bg="linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)", border="#fcd34d", title_color="#92400e", text_color="#78350f", subtitle="Resumo — entradas no cartão acima", compact=True %}
+          {% include "partials/recommendation.html" %}
+        {% endwith %}
+      {% else %}
+        {% with title="🎲 Palpite Alternativo", bg="linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)", border="#fcd34d", title_color="#92400e", text_color="#78350f", subtitle="", compact=False %}
+          {% include "partials/recommendation.html" %}
+        {% endwith %}
+        {% with strategy_primary=False, strategy_compact=True %}
+          {% include "partials/strategy_card.html" %}
+        {% endwith %}
+      {% endif %}
+
       {% if a.llm_explanation %}
-      <div class="llm-box" style="background:#fef2f2;border-color:#fecaca;color:#991b1b;font-style:normal;">
+      <div class="llm-box" style="margin-top: 1rem; font-size: 0.9rem; background:#fef2f2;border-color:#fecaca;color:#991b1b;font-style:normal;">
         {{ a.llm_explanation }}
       </div>
       {% endif %}
@@ -316,12 +346,6 @@
         </div>
       </div>
       {% endif %}
-
-      {% include "partials/strategy_card.html" %}
-
-      {% with title="🎲 Palpite Alternativo", bg="linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)", border="#fcd34d", title_color="#92400e", text_color="#78350f", subtitle="" %}
-        {% include "partials/recommendation.html" %}
-      {% endwith %}
 
       {% if a.criteria %}
       <details open>

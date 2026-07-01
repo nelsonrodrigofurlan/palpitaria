@@ -1,36 +1,57 @@
 {% if a.strategy_card and a.strategy_card.strategies %}
-<div class="strategy-card" style="margin-top: 1.5rem; background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%); border: 1px solid #e9d5ff; border-radius: 14px; padding: 1.1rem 1.25rem;">
-  <h3 style="font-size: 0.95rem; font-weight: 800; color: #6b21a8; margin: 0 0 0.35rem; text-transform: uppercase; letter-spacing: 0.04em;">
-    📋 Cartão de Estratégias
+{% set strategy_primary = strategy_primary if strategy_primary is defined else true %}
+{% set strategy_compact = strategy_compact if strategy_compact is defined else false %}
+{% set is_handicap_mode = a.strategy_card.display_mode == 'handicap_primary' %}
+<div class="strategy-card{% if strategy_primary %} strategy-card--primary{% endif %}{% if strategy_compact %} strategy-card--compact{% endif %}"
+     style="margin-top: {% if strategy_compact %}0.75{% else %}1.5{% endif %}rem;
+            background: {% if is_handicap_mode and strategy_primary %}linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%){% elif strategy_primary %}linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%){% else %}#f8fafc{% endif %};
+            border: {% if strategy_primary %}2px{% else %}1px{% endif %} solid {% if is_handicap_mode and strategy_primary %}#fdba74{% elif strategy_primary %}#e9d5ff{% else %}#e2e8f0{% endif %};
+            border-radius: {% if strategy_primary %}16{% else %}12{% endif %}px;
+            padding: {% if strategy_compact %}0.75rem 0.9rem{% else %}1.1rem 1.25rem{% endif %};">
+  <h3 style="font-size: {% if strategy_compact %}0.82{% else %}0.95{% endif %}rem; font-weight: 800;
+             color: {% if is_handicap_mode and strategy_primary %}#c2410c{% else %}#6b21a8{% endif %};
+             margin: 0 0 0.35rem; text-transform: uppercase; letter-spacing: 0.04em;">
+    📋 Cartão de Estratégias{% if strategy_primary %} — entrada principal{% endif %}
   </h3>
   {% if a.strategy_card.headline %}
-  <p style="font-size: 0.88rem; color: #581c87; margin: 0 0 1rem; line-height: 1.45;">{{ a.strategy_card.headline }}</p>
+  <p style="font-size: {% if strategy_compact %}0.8{% else %}0.88{% endif %}rem;
+            color: {% if is_handicap_mode and strategy_primary %}#9a3412{% else %}#581c87{% endif %};
+            margin: 0 0 {% if strategy_compact %}0.65{% else %}1{% endif %}rem; line-height: 1.45;">
+    {{ a.strategy_card.headline }}
+  </p>
   {% endif %}
 
-  <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+  <div style="display: flex; flex-direction: column; gap: {% if strategy_compact %}0.5{% else %}0.75{% endif %}rem;">
     {% for s in a.strategy_card.strategies %}
-    <div style="background: white; border-radius: 10px; padding: 0.85rem 1rem; border: 1px solid #e9d5ff;">
+    <div style="background: white; border-radius: 10px;
+                padding: {% if strategy_compact %}0.6rem 0.75rem{% else %}0.85rem 1rem{% endif %};
+                border: 1px solid {% if loop.first and strategy_primary %}{% if is_handicap_mode %}#fdba74{% else %}#c4b5fd{% endif %}{% else %}#e9d5ff{% endif %};
+                {% if loop.first and strategy_primary %}box-shadow: 0 2px 8px rgba(0,0,0,0.04);{% endif %}">
       <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.35rem;">
-        <strong style="font-size: 0.8rem; color: #7c3aed; text-transform: uppercase;">{{ s.label }}</strong>
+        <strong style="font-size: 0.75rem; color: {% if is_handicap_mode %}#ea580c{% else %}#7c3aed{% endif %}; text-transform: uppercase;">{{ s.label }}</strong>
+        {% if not strategy_compact or loop.first %}
         <span style="font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 6px; background: {% if s.risk == 'alto' %}#fee2e2{% elif s.risk == 'baixo' %}#dcfce7{% else %}#fef9c3{% endif %}; color: {% if s.risk == 'alto' %}#991b1b{% elif s.risk == 'baixo' %}#166534{% else %}#854d0e{% endif %};">
           Risco {{ s.risk or 'médio' }}
         </span>
+        {% endif %}
       </div>
-      <div style="font-size: 0.92rem; font-weight: 700; color: var(--text); margin-bottom: 0.25rem;">
+      <div style="font-size: {% if strategy_compact %}0.85{% else %}0.92{% endif %}rem; font-weight: 700; color: var(--text); margin-bottom: 0.25rem;">
         {{ s.market }}
         {% if s.side and s.side != 'NEUTRO' %}
         <span style="font-size: 0.72rem; font-weight: 600; color: var(--muted); margin-left: 0.35rem;">{{ s.side }}</span>
         {% endif %}
         {% if s.odds_hint and s.odds_hint != '—' %}
-        <span style="font-size: 0.75rem; font-weight: 600; color: var(--blue); margin-left: 0.35rem;">@ {{ s.odds_hint }}</span>
+        <span style="font-size: 0.75rem; font-weight: 600; color: var(--blue); margin-left: 0.35rem;">{{ s.odds_hint }}</span>
         {% endif %}
       </div>
+      {% if not strategy_compact or loop.first %}
       <p style="font-size: 0.8rem; color: var(--muted); margin: 0; line-height: 1.4;">{{ s.thesis }}</p>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
 
-  {% if a.strategy_card.avoid %}
+  {% if a.strategy_card.avoid and not strategy_compact %}
   <p style="font-size: 0.78rem; color: #9f1239; margin: 0.85rem 0 0; padding-top: 0.65rem; border-top: 1px dashed #e9d5ff;">
     ⚠️ Evitar: {{ a.strategy_card.avoid }}
   </p>

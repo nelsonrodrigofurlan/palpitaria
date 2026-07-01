@@ -59,6 +59,24 @@ _INCOMPLETE_END_RE = re.compile(r"[\*\-:,]$")
 _VALID_END_RE = re.compile(r'[.!?…]["\']?\s*$')
 
 EXPLANATION_MAX_CHARS = 1500
+EXPLANATION_COMPACT_MAX_CHARS = 500
+
+SYSTEM_PROMPT_COMPACT = """Você é o analista sênior da Palpitaria FC. Escreva a leitura pré-jogo em português do Brasil.
+
+FORMATO OBRIGATÓRIO (não negocie):
+- Exatamente 1 parágrafo em prosa corrida.
+- Sem títulos, sem bullets, sem asteriscos, sem markdown, sem listas.
+- Sem inglês. Não use termos como "best pick", "grounded", "Historical Web".
+- 3–5 frases completas, terminando em ponto final.
+- Máximo 500 caracteres no total.
+
+CONTEÚDO:
+- Cenário do jogo em tom analítico: momento das equipes e o fio condutor do dia.
+- NÃO repita mercados, odds ou estratégias — o cartão de estratégias acima já cobre entradas.
+- Bastidores detalhados ficam na grade abaixo; cite só o que muda o clima do jogo.
+
+Tom: profissional, direto — sem "oba-oba". Não invente dados.
+"""
 
 
 def _strip_markdown_noise(text: str) -> str:
@@ -74,11 +92,12 @@ def _strip_markdown_noise(text: str) -> str:
     return merged
 
 
-def _explanation_quality_issues(text: str) -> list[str]:
+def _explanation_quality_issues(text: str, *, compact: bool = False) -> list[str]:
     """Retorna motivos de rejeição; lista vazia = aceitável."""
     issues: list[str] = []
     cleaned = text.strip()
-    if len(cleaned) < 120:
+    min_len = 80 if compact else 120
+    if len(cleaned) < min_len:
         issues.append("muito_curto")
     if _MARKDOWN_LIST_RE.search(cleaned):
         issues.append("markdown_lista")
@@ -97,8 +116,8 @@ def _explanation_quality_issues(text: str) -> list[str]:
     return issues
 
 
-def _is_acceptable_explanation(text: str) -> bool:
-    return not _explanation_quality_issues(text)
+def _is_acceptable_explanation(text: str, *, compact: bool = False) -> bool:
+    return not _explanation_quality_issues(text, compact=compact)
 
 
 def _finalize_explanation(text: str, max_chars: int | None = None) -> str:
@@ -229,13 +248,24 @@ def refine_best_pick(analysis: FixtureAnalysis) -> dict | None:
         return analysis.best_pick
 
 
-def _compose_explanation_from_analysis(analysis: FixtureAnalysis) -> str:
+def _compose_explanation_from_analysis(analysis: FixtureAnalysis, *, compact: bool = False) -> str:
     """Fallback em português quando o LLM falha no formato."""
     pick = analysis.best_pick or {}
     ctx = analysis.match_context or {}
     market = pick.get("market", "—")
     reason = pick.get("reason", "").strip()
     web = pick.get("web_factor", "").strip()
+    limit = EXPLANATION_COMPACT_MAX_CHARS if compact else None
+
+    if compact:
+        bit = reason or web or "Bastidores e números na grade abaixo."
+        text = (
+            f"{analysis.home_name} x {analysis.away_name} — potencial {analysis.goal_potential_score}/100. "
+            f"{bit} Entradas e mercados estão no cartão acima."
+        )
+        if analysis.excluded and analysis.exclusion_reasons:
+            text += f" Fora do filtro de gols: {analysis.exclusion_reasons[0]}."
+        return _finalize_explanation(text, max_chars=limit)
 
     referee = (ctx.get("referee") or "").strip()
     weather = (ctx.get("weather") or "").strip()
@@ -266,7 +296,7 @@ def _compose_explanation_from_analysis(analysis: FixtureAnalysis) -> str:
             + "."
         )
     parts = [p for p in (p1, p2, p3) if p]
-    return _finalize_explanation("\n\n".join(parts))
+    return _finalize_explanation("\n\n".join(parts), max_chars=limit)
 
 
 def _request_explanation(system: str, user_content: str, *, retry: bool = False) -> str:
@@ -280,7 +310,7 @@ def _request_explanation(system: str, user_content: str, *, retry: bool = False)
     )
 
 
-def explain_analysis(analysis: FixtureAnalysis) -> str:
+def explain_analysis(analysis: FixtureAnalysis, *, compact: bool = False) -> str:
     payload = {
         "home": analysis.home_name,
         "away": analysis.away_name,
@@ -309,29 +339,35 @@ def explain_analysis(analysis: FixtureAnalysis) -> str:
     }
 
     if not settings.has_llm:
+        if compact:
+            return _compose_explanation_from_analysis(analysis, compact=True)
         return _fallback_explanation(analysis)
 
-    system = SYSTEM_PROMPT
-    if analysis.excluded and analysis.best_pick:
-        system += EXCLUDED_EXPLAIN_SUFFIX
+    if compact:
+        system = SYSTEM_PROMPT_COMPACT
+    else:
+        system = SYSTEM_PROMPT
+        if analysis.excluded and analysis.best_pick:
+            system += EXCLUDED_EXPLAIN_SUFFIX
 
     user_content = (
         "Dados do jogo (gere a leitura em português, só prosa em parágrafos):\n"
         f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )
+    char_limit = EXPLANATION_COMPACT_MAX_CHARS if compact else None
 
     try:
         for attempt, is_retry in enumerate((False, True)):
             raw = _request_explanation(system, user_content, retry=is_retry)
             if not raw:
                 continue
-            candidate = _finalize_explanation(raw)
-            if _is_acceptable_explanation(candidate):
+            candidate = _finalize_explanation(raw, max_chars=char_limit)
+            if _is_acceptable_explanation(candidate, compact=compact):
                 return candidate
-        return _compose_explanation_from_analysis(analysis)
+        return _compose_explanation_from_analysis(analysis, compact=compact)
     except Exception as exc:
         hint = llm_config_hint(exc)
-        return f"{_compose_explanation_from_analysis(analysis)}\n\n(LLM indisponível: {hint})"
+        return f"{_compose_explanation_from_analysis(analysis, compact=compact)}\n\n(LLM indisponível: {hint})"
 
 
 def _fallback_explanation(analysis: FixtureAnalysis) -> str:

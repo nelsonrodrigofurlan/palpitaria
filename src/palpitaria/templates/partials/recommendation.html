@@ -1,21 +1,34 @@
 {% if a.best_pick %}
-<div class="best-recommendation" style="margin-top: 1.5rem; padding: 1.5rem; background: {{ bg }}; border-radius: 20px; border: 1px solid {{ border }};">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-    <strong style="font-size: 1.1rem; color: {{ title_color }}; text-transform: uppercase; letter-spacing: 0.05em;">{{ title }}</strong>
-    <div class="badge {% if a.best_pick.verdict == 'STRONG' %}ok{% else %}warn{% endif %}">{{ a.best_pick.verdict }}</div>
+{% set compact = compact if compact is defined else false %}
+<div class="best-recommendation{% if compact %} best-recommendation--compact{% endif %}"
+     style="margin-top: {% if compact %}0.75{% else %}1.5{% endif %}rem;
+            padding: {% if compact %}1rem 1.1rem{% else %}1.5rem{% endif %};
+            background: {{ bg }};
+            border-radius: {% if compact %}14{% else %}20{% endif %}px;
+            border: {% if compact %}1px{% else %}1px{% endif %} solid {{ border }};
+            {% if compact %}opacity: 0.95;{% endif %}">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: {% if compact %}0.5{% else %}1{% endif %}rem;">
+    <strong style="font-size: {% if compact %}0.85{% else %}1.1{% endif %}rem; color: {{ title_color }}; text-transform: uppercase; letter-spacing: 0.05em;">{{ title }}</strong>
+    <div class="badge {% if a.best_pick.verdict == 'STRONG' %}ok{% else %}warn{% endif %}" style="{% if compact %}font-size: 0.7rem;{% endif %}">{{ a.best_pick.verdict }}</div>
   </div>
-  <div style="font-size: 1.4rem; font-weight: 800; color: var(--text); margin-bottom: 0.5rem;">
+  <div style="font-size: {% if compact %}1.05{% else %}1.4{% endif %}rem; font-weight: 800; color: var(--text); margin-bottom: 0.5rem;">
     {{ a.best_pick.market }}
   </div>
+  {% if not compact %}
   <p style="font-size: 0.95rem; color: {{ text_color }}; margin: 0; line-height: 1.6;">
     {{ a.best_pick.reason }}
   </p>
+  {% else %}
+  <p style="font-size: 0.82rem; color: {{ text_color }}; margin: 0; line-height: 1.45;">
+    {{ a.best_pick.reason | truncate(140, True, '…') }}
+  </p>
+  {% endif %}
   {% if subtitle %}
   <p style="font-size: 0.8rem; color: var(--muted); margin: 0.75rem 0 0;">
     {{ subtitle }}
   </p>
   {% endif %}
-  {% if a.best_pick.web_factor %}
+  {% if a.best_pick.web_factor and not compact %}
   <p style="font-size: 0.85rem; color: #64748b; margin: 0.75rem 0 0; font-style: italic;">
     🌐 {{ a.best_pick.web_factor }}
   </p>
