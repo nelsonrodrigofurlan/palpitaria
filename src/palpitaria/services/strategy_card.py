@@ -8,6 +8,7 @@ from typing import Any
 
 from palpitaria.config import settings
 from palpitaria.services.analyzer import FixtureAnalysis
+from palpitaria.services.knockout_climate import is_knockout_stage, llm_knockout_suffix
 from palpitaria.services.llm_client import chat_completion
 from palpitaria.services.llm_utils import _parse_json_from_llm
 
@@ -218,7 +219,9 @@ def _fallback_strategy_card(
                 }
             )
     else:
-        over_market = market if "OVER" in market.upper() else "Over 1.5"
+        over_market = market if "OVER" in market.upper() and "2.5" not in market.upper() else "Over 1.5"
+        if analysis.excluded is False and getattr(analysis, "is_knockout", False):
+            over_market = "Over 1.5"
         strategies.append(
             {
                 "label": "Principal",
@@ -293,6 +296,8 @@ def build_strategy_card(
         "home_insights": analysis.home_insights,
         "away_insights": analysis.away_insights,
         "match_context": analysis.match_context,
+        "is_knockout": getattr(analysis, "is_knockout", False),
+        "stage": analysis.stage,
         "odds": {
             "favorite_ml": fav_ml,
             "lines": odds_lines,
@@ -302,9 +307,17 @@ def build_strategy_card(
     }
 
     try:
+        system = STRATEGY_SYSTEM
+        if getattr(analysis, "is_knockout", False) or is_knockout_stage(analysis.stage):
+            system += llm_knockout_suffix()
+            system += """
+Em mata-mata, inclua no cartão (se couber):
+- Uma linha "Trader" com leitura LIVE (0-0 HT, favorito abre, zebra abre) usando knockout_live_scenarios do payload.
+- Evite Principal em Over 2.5 pré-live salvo perfil extremo no payload.
+"""
         user_content = f"Dados do jogo:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
         response = chat_completion(
-            STRATEGY_SYSTEM,
+            system,
             user_content,
             temperature=0.3,
             max_tokens=700,

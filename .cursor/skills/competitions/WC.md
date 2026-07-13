@@ -11,7 +11,10 @@ Este skill define o comportamento do Palpitaria FC para a Copa do Mundo.
 1. **Amostra Flexível**: Aceitar análise com apenas **1 jogo** de histórico (na estreia, usar dados de amistosos/eliminatórias via web).
 2. **Perfil Híbrido Obrigatório**: Sempre cruzar dados da API com pesquisa web (Step 3).
 3. **Fator "Estreia"**: No primeiro jogo, a confiança deve ser moderada, a menos que o favorito seja esmagador.
-4. **Mata-Mata**: Considerar prorrogação/pênaltis na explicação (embora o mercado seja Tempo Regulamentar).
+4. **Mata-Mata**: Ver regra global em `SKILL.md` (princípio 0) e `services/knockout_climate.py`.
+   - Pré-live: Over 1.5 > Over 2.5; handicap e leitura live após o placar abrir.
+   - Explicar prorrogação/pênaltis (mercado = tempo regulamentar).
+   - Cenários live: 0-0 HT fechado; 2º tempo 0-0 chato; favorito abre → elástico; zebra abre → bloco atrás.
 
 ## Prioridades de Mercado (WC)
 - **Over 0.5 / 1.5**: Foco total em gols, especialmente em jogos de seleções ofensivas.

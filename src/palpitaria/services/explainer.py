@@ -7,6 +7,7 @@ from palpitaria.config import settings
 from types import SimpleNamespace
 
 from palpitaria.services.analyzer import FixtureAnalysis, infer_favorite, profile_from_meta
+from palpitaria.services.knockout_climate import adjust_best_pick_for_knockout, llm_knockout_suffix
 from palpitaria.services.llm_client import chat_completion, llm_config_hint
 from palpitaria.services.llm_utils import _parse_json_from_llm
 
@@ -146,6 +147,7 @@ Regras:
 - A decisão DEVE integrar bastidores e histórico web — não ignore web_factor.
 - Mercados: OVER 0.5 GOALS, OVER 1.5 GOALS, OVER 2.5 GOALS, VITÓRIA: [nome do time]
 - Se dados web contradizem stats ou há risco alto de 0-0, pode manter mercado conservador ou questionar Over 1.5.
+- Em mata-mata: não empurre Over 2.5 só com stats de fase anterior; 1º tempo fechado é cenário base.
 - Não invente jogadores, placares ou clima.
 - Só cite jogadores em home_insights/away_insights.
 
@@ -200,12 +202,16 @@ def refine_best_pick(analysis: FixtureAnalysis) -> dict | None:
         return None
 
     if not settings.has_llm:
-        return analysis.best_pick
+        return adjust_best_pick_for_knockout(analysis.best_pick, stage=analysis.stage)
 
     system = EXCLUDED_PICK_REFINE_SYSTEM if analysis.excluded else PICK_REFINE_SYSTEM
+    if getattr(analysis, "is_knockout", False):
+        system += llm_knockout_suffix()
     payload = {
         "home": analysis.home_name,
         "away": analysis.away_name,
+        "is_knockout": getattr(analysis, "is_knockout", False),
+        "stage": analysis.stage,
         "excluded": analysis.excluded,
         "exclusion_reasons": analysis.exclusion_reasons,
         "goal_potential_score": analysis.goal_potential_score,
@@ -226,7 +232,7 @@ def refine_best_pick(analysis: FixtureAnalysis) -> dict | None:
         response = chat_completion(system, user_content, temperature=0.25, max_tokens=800, feature="explainer_pick")
         parsed = _parse_json_from_llm(response)
         if not parsed or not parsed.get("market"):
-            return analysis.best_pick
+            return adjust_best_pick_for_knockout(analysis.best_pick, stage=analysis.stage)
         market = parsed["market"]
         home_p = profile_from_meta(analysis.home_stats_meta)
         away_p = profile_from_meta(analysis.away_stats_meta)
@@ -234,7 +240,7 @@ def refine_best_pick(analysis: FixtureAnalysis) -> dict | None:
             picked = market.replace("VITÓRIA:", "", 1).strip()
             fav = infer_favorite(analysis, home_p, away_p)
             if fav and picked != fav.name:
-                return analysis.best_pick
+                return adjust_best_pick_for_knockout(analysis.best_pick, stage=analysis.stage)
         refined = {
             "market": market,
             "verdict": parsed.get("verdict") or analysis.best_pick.get("verdict", "CANDIDATE"),
@@ -243,9 +249,9 @@ def refine_best_pick(analysis: FixtureAnalysis) -> dict | None:
         }
         if parsed.get("web_factor"):
             refined["web_factor"] = parsed["web_factor"]
-        return refined
+        return adjust_best_pick_for_knockout(refined, stage=analysis.stage)
     except Exception:
-        return analysis.best_pick
+        return adjust_best_pick_for_knockout(analysis.best_pick, stage=analysis.stage)
 
 
 def _compose_explanation_from_analysis(analysis: FixtureAnalysis, *, compact: bool = False) -> str:
@@ -336,6 +342,8 @@ def explain_analysis(analysis: FixtureAnalysis, *, compact: bool = False) -> str
         "away_stats": analysis.away_stats_meta,
         "best_pick": analysis.best_pick,
         "match_context": analysis.match_context,
+        "is_knockout": getattr(analysis, "is_knockout", False),
+        "stage": analysis.stage,
     }
 
     if not settings.has_llm:
@@ -349,6 +357,8 @@ def explain_analysis(analysis: FixtureAnalysis, *, compact: bool = False) -> str
         system = SYSTEM_PROMPT
         if analysis.excluded and analysis.best_pick:
             system += EXCLUDED_EXPLAIN_SUFFIX
+    if getattr(analysis, "is_knockout", False):
+        system += llm_knockout_suffix()
 
     user_content = (
         "Dados do jogo (gere a leitura em português, só prosa em parágrafos):\n"

@@ -213,6 +213,11 @@
             💡 {{ a.match_context.impact }}
           </p>
           {% endif %}
+          {% if (a.match_context or {}).knockout_climate %}
+          <p style="font-size: 0.85rem; color: #9a3412; margin: 0.75rem 0 0; padding: 0.65rem 0.85rem; background: #fff7ed; border-radius: 10px; border: 1px solid #fed7aa;">
+            🏆 <strong>Mata-mata:</strong> {{ a.match_context.knockout_climate }}
+          </p>
+          {% endif %}
         </div>
         {% endif %}
       </div>

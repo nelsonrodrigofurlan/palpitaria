@@ -1,20 +1,26 @@
 # Especialista: Brasileirão Série A (BSA)
 
-Este skill define o comportamento do Palpitaria FC para o Campeonato Brasileiro.
+Este skill define o comportamento do Palpitaria FC para o Campeonato Brasileiro Série A.
 
 ## Características do Campeonato
 - **Pontos Corridos**: 38 rodadas, longa duração.
-- **Vantagem de Casa (Home Edge)**: Fator determinante no Brasil.
-- **Desgaste de Elenco**: Viagens longas e calendário apertado impactam a performance.
-- **Equilíbrio**: Muitos jogos decididos por detalhes; poucos favoritos absolutos fora de casa.
+- **Vantagem de Casa (Home Edge)**: fator determinante no Brasil.
+- **Desgaste de Elenco**: viagens longas e calendário apertado.
+- **Equilíbrio**: poucos favoritos absolutos fora de casa.
 
 ## Regras de Análise (BSA)
-1. **Amostra Robusta**: Exigir pelo menos **3 a 5 jogos** de histórico recente para uma análise "STRONG".
-2. **API como Fonte Primária**: Os dados da API costumam ser maduros e confiáveis para esta liga.
-3. **Fator Local**: Valorizar o mando de campo na análise de 1X2.
-4. **Janela de Forma**: Dar peso maior aos últimos 5 jogos (Forma Recente).
+1. **Amostra robusta**: mínimo **5 jogos** recentes para análise STRONG.
+2. **API como fonte primária**: football-data.org `BSA` — web só complementar (desfalques).
+3. **Fator local**: mando entra no λ do Poisson (`home_advantage_goals`).
+4. **Janela de forma**: últimos 5 jogos com peso maior no perfil.
+5. **Modelo decide**: `prediction.py` gera P(Over) e pick; LLM só narra (`narrate.py`).
 
 ## Prioridades de Mercado (BSA)
-- **Over 1.5**: Mercado core para times de elite em casa.
-- **Ambas Marcam (BTTS)**: Comum em clássicos e jogos de times ofensivos.
-- **Lay 0-0**: Útil em jogos de times com defesas frágeis.
+- **Over 1.5**: mercado core (times ofensivos em casa).
+- **Over 0.5**: conservador anti-zero.
+- **Over 2.5**: só com P modelo alta e λ elevado.
+- **BTTS / Lay 0-0**: secundários conforme probs.
+
+## Código
+- Perfil: `services/competitions.py` → `BSA`
+- Odds API sport: `soccer_brazil_campeonato`

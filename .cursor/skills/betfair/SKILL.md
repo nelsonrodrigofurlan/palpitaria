@@ -20,12 +20,13 @@ Skill de contexto e workflow. Leia [context.md](context.md) antes de propor cód
 
 | Item | Valor |
 |------|-------|
-| Fase | **1 → 2** — MVP Copa 2026; fundação técnica |
-| Repositório | Greenfield — sem commits |
+| Fase | **2 → 3** — Pivot pós-Copa: **Brasileirão A/B** + motor de predição |
+| Repositório | Ativo |
 | Produto | Modelo preditivo explicável para apostas esportivas |
-| Saída core | 3 cenários (pessimista / realista / otimista) + explicabilidade |
-| MVP imediato | **Copa do Mundo 2026** (API-Football `league=1`, `season=2026`) |
-| Liga pós-Copa | Brasileirão Série A |
+| Saída core | Probs Poisson + edge + 3 cenários + cartão narrado |
+| Liga ativa | **BSA + BSB** (football-data.org); WC em wind-down |
+| MVP imediato | Brasileirão 2026 — API first, LLM só narra |
+| Filosofia | **Modelo decide, LLM narra** — `prediction.py` + `narrate.py` (1 call) |
 | Dados | 12 meses histórico; seleções, jogadores, eliminatórias |
 | Coleta | APIs públicas → pagas → scraping complementar |
 | Exchange | API oficial descartada; hipótese sessão browser (P&D) |
@@ -38,6 +39,7 @@ Skill de contexto e workflow. Leia [context.md](context.md) antes de propor cód
 | Saída Alternativa | Vencedor (1X2) e Lay Correct Score (apenas se houver critério mínimo; senão descarta) |
 | Especialização | **Skills por Campeonato** — Ver pasta `.cursor/skills/competitions/` |
 | Stack | Python para dados/ML; frontend FastAPI + HTMX |
+| Agentes | Contratos em `agents/` (padrão módulo 4) — começo: `agents/palpitaria-diario/` |
 
 ## Filiais — lançamento manual e import CSV
 
@@ -67,28 +69,34 @@ Mapeamento filial (resumo): Over 0,5 / 1,5 / 2,5 BACK → filiais over; 1X2 → 
 
 | Camada | O quê | Tokens / custo |
 |--------|--------|----------------|
-| **0** | Sync API (fixtures, odds) | Quase zero LLM |
-| **1** | Filtro numérico anti-zero (`analyze_fixture`) | Zero LLM |
-| **2** | LLM curto: `refine_best_pick` + `explain_analysis` + **`build_strategy_card`** | 1 chamada/jogo candidato+descartado |
-| **3** | Web stalking **condicional** — perfil híbrido se stale (`wc_web_profile_refresh_hours`, default 48h); bastidores/contexto só se cache ausente | Só quando necessário |
-| **4** | Chat `/chat` — contexto do **banco** (report, strategy_card, perfis, odds); web ao vivo só se usuário pedir notícias | Sem re-scraping padrão |
+| **0** | Sync API (fixtures, odds) BSA/BSB/WC | Quase zero LLM |
+| **1** | Filtro numérico + **Poisson** (`prediction.py`) | Zero LLM |
+| **2** | **Uma** narrativa (`narrate.py`) só se houver pick | 1 call/jogo com pick |
+| **3** | Web stalking **condicional** (Copa hybrid; Brasil API-first) | Só buraco/desfalque |
+| **4** | Chat — contexto do banco; web sob demanda | Baixo |
 
-**FixtureStrategyCard:** `services/strategy_card.py` → JSON 2–3 estratégias (mercado, tese, risco, odd hint) → `fixture_reports.strategy_json` → partial `partials/strategy_card.html` na home.
+**Regra:** descarte total = **zero token**. Modelo nunca é sobrescrito pelo LLM (`refine_best_pick` legado não decide mais).
+
+- **BSA / BSB**: `.cursor/skills/competitions/BSA.md`, `BSB.md` + `services/competitions.py`
+- **WC**: wind-down — últimos jogos; manter knockout_climate
+- Seed: `python scripts/ensure_brazil_competitions.py`
 
 ## Especialização por Campeonato
 
 O Palpitaria FC opera com "Módulos de Especialista" para cada competição, pois cada uma possui dinâmicas únicas:
 
-- **Copa do Mundo (WC)**: Foco em amostras curtas, perfil híbrido (API+Web) e volatilidade. Ver `.cursor/skills/competitions/WC.md`.
-- **Brasileirão (BSA)**: Foco em pontos corridos, mando de campo e amostras longas. Ver `.cursor/skills/competitions/BSA.md`.
-- **Copa do Brasil (CDB)**: Foco em mata-mata, motivação e rotação de elenco. Ver `.cursor/skills/competitions/CDB.md`.
+- **Copa do Mundo (WC)**: Wind-down — amostras curtas, hybrid web. Ver `WC.md`.
+- **Brasileirão A (BSA)**: API first, mando, Poisson. Ver `BSA.md`.
+- **Brasileirão B (BSB)**: API first, mando forte, edge exigente. Ver `BSB.md`.
+- **Copa do Brasil (CDB)**: Mata-mata. Ver `CDB.md`.
 
 Ao analisar um jogo, identifique o `competition_code` e aplique as regras do especialista correspondente.
 
 ## Princípios de produto
 
+0. **Mata-mata (qualquer campeonato)** — Fase eliminatória muda o clima tático: jogo físico, underdog fechado, 1º tempo truncado, 0-0 no 2º tempo ainda é cenário provável. Só após gol o jogo muda (placar elástico se favorito abre; bloco total se zebra abre). Código: `services/knockout_climate.py`. Pré-live: priorizar Over 1.5 / handicap / live; desconfiar de Over 2.5 baseado só na fase anterior.
 1. **Prioridade Máxima: GOLS** — O produto busca Gols (Over 0.5, 1.5, 2.5). Esta é a base do Palpitaria FC.
-2. **Base Fundamentada ou Descarte** — Nunca deduzir sem base sólida. Se houver dúvida ou dados insuficientes, **descarte** o palpite.
+2. **Base Fundamentada ou Descarte (responsabilidade)** — Sem histórico real (API/web), **não palpita**. Perfil provisório/odds-implied = **descarte total**, sem homologada nem alternativa. Palpites vão para pessoas e dinheiro real (seu e de outros): melhor zero entradas do que entrada sem fundamento. Código: `services/foundation.py`.
 3. **Homologada vs Alternativa** — Apenas mercados de Gols entram como "Homologadas". Mercados de Vencedor (1X2) e Lay Correct Score são estritamente "Alternativos", a menos que haja um favorito absoluto com base de dados massiva.
 4. **Liberdade de Descarte** — O sistema não é obrigado a palpitar 100% dos jogos. Se um jogo for diagnosticado como "muito abaixo" estatisticamente, ele deve ser descartado totalmente, não aparecendo nem como alternativa.
 5. **Explicabilidade primeiro** — toda indicação mostra *como* chegou lá (variáveis, pesos, tendências).
@@ -102,6 +110,7 @@ Ao analisar um jogo, identifique o `competition_code` e aplique as regras do esp
 - **Janela:** `06:00` → `06:00` do dia seguinte em `America/Sao_Paulo` (`app_day_start_hour=6`).
 - **Leituras / home / pipeline:** só fixtures com kickoff nessa janela (`for_today_only=True`).
 - **Perfis:** passo 2 atualiza seleções do dia **e** faz backfill de quem ficou sem perfil — isso **não** expande análises para jogos passados.
+- **Agente diário:** contratos em `agents/palpitaria-diario/` + runtime `python -m palpitaria.agents rodar`. Sync → análise (fundamento) → histórico IA → rascunho. **Não auto-publica**; `publicar_indicacoes` é ação sensível.
 
 ## Painel root (só fundador)
 

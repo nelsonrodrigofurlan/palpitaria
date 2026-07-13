@@ -13,7 +13,16 @@ from palpitaria.models import Fixture
 from palpitaria.services.ingest import latest_profile
 from palpitaria.services.team_names import localize_team_name
 from palpitaria.services.chat_service import get_valid_insights_for_team
+from palpitaria.services.competitions import get_competition_profile
+from palpitaria.services.foundation import both_profiles_solid
+from palpitaria.services.knockout_climate import (
+    adjust_best_pick_for_knockout,
+    enrich_analysis_knockout,
+    is_knockout_stage,
+    knockout_over25_thresholds,
+)
 from palpitaria.services.match_context_utils import default_match_context
+from palpitaria.services.prediction import predict_match
 
 
 @dataclass
@@ -87,6 +96,8 @@ class FixtureAnalysis:
     away_stats_meta: dict | None = None  # Perfil híbrido (API + web) — visitante
     criteria_brief: dict | None = None  # Resumo gerencial dos achados numéricos
     strategy_card: dict | None = None  # 2–3 estratégias estruturadas (exchange)
+    is_knockout: bool = False  # Fase eliminatória (mata-mata)
+    prediction: dict | None = None  # Saída do motor Poisson (probs + λ)
     venue_stadium: str | None = None
     venue_city: str | None = None
     venue_state: str | None = None
@@ -194,6 +205,7 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
         venue_city=fixture.venue_city,
         venue_state=fixture.venue_state,
     )
+    analysis.is_knockout = is_knockout_stage(fixture.stage)
 
     if home_profile is None or away_profile is None:
         analysis.excluded = True
@@ -203,16 +215,45 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
         _attach_criteria_brief(analysis)
         return analysis
 
-    # Regra de Amostragem: 
-    # Para ligas regulares (BSA, PL, etc.), exigimos 3 jogos. 
-    # Para torneios curtos (Copa do Mundo), aceitamos 1 jogo.
-    min_games = 1 if comp_code == "WC" else 3
+    comp_profile = get_competition_profile(comp_code)
+    min_games = comp_profile.min_sample_games
     if home_profile.matches_sampled < min_games or away_profile.matches_sampled < min_games:
         analysis.excluded = True
         analysis.exclusion_reasons.append(
             f"Base de dados reduzida ({home_profile.matches_sampled} vs {away_profile.matches_sampled} jogos). "
             f"Para este campeonato, o produto exige pelo menos {min_games} jogo(s) por seleção."
         )
+        _attach_criteria_brief(analysis, home_profile, away_profile)
+        return analysis
+
+    # Portão de responsabilidade: sem histórico real = SEM palpite (nem alternativo)
+    solid, solid_reasons = both_profiles_solid(
+        home_profile, away_profile, min_matches=min_games
+    )
+    if not solid:
+        analysis.excluded = True
+        analysis.exclusion_reasons = [
+            "Sem fundamento para palpite público — base histórica insuficiente ou provisória."
+        ] + solid_reasons
+        analysis.best_pick = None
+        analysis.goal_potential_score = 0.0
+        analysis.prediction = {
+            "blocked": True,
+            "reason": "foundation_gate",
+            "details": solid_reasons,
+        }
+        analysis.home_stats_meta = _profile_stats_meta(home_profile)
+        analysis.away_stats_meta = _profile_stats_meta(away_profile)
+        analysis.home_stats_meta["user_insights"] = get_valid_insights_for_team(
+            db, fixture.home_team_id
+        )
+        analysis.away_stats_meta["user_insights"] = get_valid_insights_for_team(
+            db, fixture.away_team_id
+        )
+        if home_profile.insights_json:
+            analysis.home_insights = json.loads(home_profile.insights_json)
+        if away_profile.insights_json:
+            analysis.away_insights = json.loads(away_profile.insights_json)
         _attach_criteria_brief(analysis, home_profile, away_profile)
         return analysis
 
@@ -292,19 +333,50 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
     passed_weight = sum(1 for c in criteria if c.passed)
     analysis.goal_potential_score = round((passed_weight / len(criteria)) * 100, 1)
 
-    if not analysis.excluded:
-        analysis.best_pick = _select_best_pick(
-            analysis, home_profile, away_profile, combined_avg, min_over_05
-        )
+    # Motor de predição (Poisson) — decide mercado; LLM só narra depois
+    pred = predict_match(
+        home_scored=home_profile.avg_goals_scored,
+        home_conceded=home_profile.avg_goals_conceded,
+        away_scored=away_profile.avg_goals_scored,
+        away_conceded=away_profile.avg_goals_conceded,
+        competition_code=comp_code,
+        stage=analysis.stage,
+        home_name=analysis.home_name,
+        away_name=analysis.away_name,
+    )
+    analysis.prediction = pred.to_dict()
+    analysis.is_knockout = pred.is_knockout or analysis.is_knockout
+
+    model_pick = pred.as_best_pick()
+    if analysis.excluded:
+        # Fora do filtro de gols: só aceita alternativa do modelo (1X2) ou fallback legado
+        if model_pick and model_pick.get("scope") == "alternate":
+            analysis.best_pick = model_pick
+        else:
+            analysis.best_pick = _select_alternate_pick(
+                analysis,
+                home_profile,
+                away_profile,
+                combined_avg,
+                max_zero_zero,
+                avg_btts,
+            )
+    elif model_pick and model_pick.get("scope") == "goals":
+        analysis.best_pick = model_pick
+    elif model_pick and model_pick.get("scope") == "alternate":
+        # Modelo sem Over sólido → não homologa gols; marca excluído leve
+        analysis.best_pick = model_pick
+        analysis.excluded = True
+        analysis.exclusion_reasons.append(pred.reason)
     else:
-        analysis.best_pick = _select_alternate_pick(
-            analysis,
-            home_profile,
-            away_profile,
-            combined_avg,
-            max_zero_zero,
-            avg_btts,
-        )
+        analysis.best_pick = None
+        analysis.excluded = True
+        analysis.exclusion_reasons.append(pred.reason or "Modelo: descarte total")
+
+    analysis.best_pick = adjust_best_pick_for_knockout(
+        analysis.best_pick,
+        stage=analysis.stage,
+    )
 
     analysis.home_stats_meta = _profile_stats_meta(home_profile)
     analysis.away_stats_meta = _profile_stats_meta(away_profile)
@@ -313,14 +385,13 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
     analysis.home_stats_meta["user_insights"] = get_valid_insights_for_team(db, fixture.home_team_id)
     analysis.away_stats_meta["user_insights"] = get_valid_insights_for_team(db, fixture.away_team_id)
 
-    # Attach insights if available
     if home_profile.insights_json:
         analysis.home_insights = json.loads(home_profile.insights_json)
     if away_profile.insights_json:
         analysis.away_insights = json.loads(away_profile.insights_json)
 
-    analysis.criteria_brief = build_criteria_brief(analysis)
-
+    enrich_analysis_knockout(analysis)
+    _attach_criteria_brief(analysis, home_profile, away_profile)
     return analysis
 
 
@@ -709,12 +780,27 @@ def _select_best_pick(
 
     # Lógica de decisão para a ÚNICA melhor recomendação (PRIORIDADE TOTAL: GOLS)
     
-    # 1. Prioridade Máxima: Chuva de Gols (Over 2.5)
-    if combined_avg >= 3.2 and over_25_rate >= 0.55 and confidence >= 95 and n_min >= 2:
+    # 1. Prioridade Máxima: Chuva de Gols (Over 2.5) — barra mais alta em mata-mata
+    o25_avg, o25_rate, o25_conf = knockout_over25_thresholds() if analysis.is_knockout else (3.2, 0.55, 95.0)
+    if (
+        combined_avg >= o25_avg
+        and over_25_rate >= o25_rate
+        and confidence >= o25_conf
+        and n_min >= 2
+    ):
+        reason = (
+            f"Média altíssima ({combined_avg:.1f}) e histórico de Over 2.5 em {over_25_rate:.0%}. "
+            "Cenário de jogo muito aberto."
+        )
+        if analysis.is_knockout:
+            reason += (
+                " Mata-mata: só homologa Over 2.5 com perfil extremo; "
+                "cenário base ainda é jogo fechado no 1º tempo."
+            )
         return {
             "market": "OVER 2.5 GOALS",
             "verdict": "STRONG",
-            "reason": f"Média altíssima ({combined_avg:.1f}) e histórico de Over 2.5 em {over_25_rate:.0%}. Cenário de jogo muito aberto.",
+            "reason": reason,
             "scope": "goals",
         }
 
@@ -831,9 +917,11 @@ def persist_analysis(
     report.goal_potential_score = analysis.goal_potential_score
     report.llm_explanation = explanation
     report.best_pick_json = json.dumps(analysis.best_pick, ensure_ascii=False) if analysis.best_pick else None
-    report.match_context_json = (
-        json.dumps(analysis.match_context, ensure_ascii=False) if analysis.match_context else None
-    )
+    ctx = dict(analysis.match_context or {})
+    if analysis.prediction:
+        ctx["prediction"] = analysis.prediction
+    report.match_context_json = json.dumps(ctx, ensure_ascii=False) if ctx else None
+    analysis.match_context = ctx
     report.strategy_json = (
         json.dumps(analysis.strategy_card, ensure_ascii=False) if analysis.strategy_card else None
     )
@@ -869,6 +957,9 @@ def attach_saved_reports(db: Session, analyses: list[FixtureAnalysis]) -> None:
             analysis.match_context = default_match_context()
         if report.strategy_json:
             analysis.strategy_card = json.loads(report.strategy_json)
+        analysis.is_knockout = is_knockout_stage(analysis.stage) or bool(
+            (analysis.match_context or {}).get("knockout")
+        )
 
 
 def count_teams_with_profiles(db: Session) -> tuple[int, int]:

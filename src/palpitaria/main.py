@@ -199,6 +199,7 @@ def update_competition_odds(db: Session, comp_code: str):
     """Busca odds da Betfair e salva no cache da competição."""
     sport_map = {
         "BSA": "soccer_brazil_campeonato",
+        "BSB": "soccer_brazil_serie_b",
         "WC": "soccer_fifa_world_cup",
         "PL": "soccer_epl",
         "PD": "soccer_spain_la_liga",
@@ -488,7 +489,6 @@ def _execute_analysis_pipeline(db: Session, comp_code: str):
 
     from palpitaria.models import FixtureReport
     from palpitaria.services.chat_service import _odds_for_match
-    from palpitaria.services.strategy_card import build_strategy_card
 
     for analysis in analyses:
         fixture = db.query(Fixture).filter_by(id=analysis.fixture_id).one()
@@ -520,20 +520,28 @@ def _execute_analysis_pipeline(db: Session, comp_code: str):
         analysis.home_insights = home_insights
         analysis.away_insights = away_insights
         analysis.match_context = match_context or default_match_context()
+        from palpitaria.services.knockout_climate import enrich_analysis_knockout
+
+        enrich_analysis_knockout(analysis)
 
         add_log("  [3/3] Decisão + cartão de estratégias (LLM)...")
         settings.openai_api_key = llm_key
         settings.openai_base_url = llm_base
 
         analysis.best_pick = refine_best_pick(analysis)
-        analysis.strategy_card = build_strategy_card(
-            analysis,
-            odds=_odds_for_match(db, analysis.home_name, analysis.away_name, comp_code),
-        )
-        has_card = bool(analysis.strategy_card and analysis.strategy_card.get("strategies"))
-        explanation = explain_analysis(analysis, compact=has_card)
-        analysis.llm_explanation = explanation
-        persist_analysis(db, analysis, explanation, competition_code=comp_code)
+        # Narrativa única (cartão + comentário) — modelo já decidiu o pick
+        from palpitaria.services.narrate import narrate_fixture
+
+        odds = _odds_for_match(db, analysis.home_name, analysis.away_name, comp_code)
+        # Descartados totais sem pick: zero token
+        if analysis.best_pick is None:
+            analysis.strategy_card = None
+            analysis.llm_explanation = None
+        else:
+            card, comment = narrate_fixture(analysis, odds=odds)
+            analysis.strategy_card = card
+            analysis.llm_explanation = comment
+        persist_analysis(db, analysis, analysis.llm_explanation or "", competition_code=comp_code)
         explained += 1
         if not analysis.excluded:
             candidates += 1

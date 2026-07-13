@@ -4,6 +4,7 @@ Este skill define o comportamento do Palpitaria FC para a Copa do Brasil.
 
 ## Características do Campeonato
 - **Mata-Mata**: Jogos de ida e volta (ou jogo único no início).
+- **Clima eliminatório**: Underdog fecha; favorito não ganha fácil no 1º tempo; após gol a partida muda (ver `knockout_climate.py`).
 - **Regulamento**: Gol fora de casa (verificar se vigente), pressão por resultado imediato.
 - **Zebras**: Times menores costumam jogar a "vida" contra gigantes.
 

@@ -33,7 +33,12 @@ PLAIN_PURPOSE: dict[str, str] = {
         "volatilidade e regras específicas de seleções."
     ),
     "competitions/BSA.md": (
-        "Especialista Brasileirão: pontos corridos, mando de campo e amostras longas."
+        "Especialista Brasileirão Série A: pontos corridos, mando de campo, "
+        "API first e motor Poisson."
+    ),
+    "competitions/BSB.md": (
+        "Especialista Brasileirão Série B: mando forte, variância alta, "
+        "edge mais exigente e Over 1.5 como core."
     ),
     "competitions/CDB.md": (
         "Especialista Copa do Brasil: mata-mata, motivação e rotação de elenco."
