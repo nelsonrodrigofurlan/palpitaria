@@ -82,6 +82,49 @@ def chat_completion(
         raise
 
 
+def chat_completion_json(
+    system: str,
+    user: str,
+    *,
+    temperature: float = 0.1,
+    max_tokens: int = 500,
+    feature: str = "agent_planner",
+) -> tuple[str, dict[str, int]]:
+    """JSON-oriented completion; returns (content, token_usage)."""
+    client = get_llm_client()
+    model = resolve_model()
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
+    kwargs: dict = {
+        "model": model,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "messages": messages,
+    }
+    try:
+        try:
+            response = client.chat.completions.create(
+                **kwargs,
+                response_format={"type": "json_object"},
+            )
+        except Exception:
+            response = client.chat.completions.create(**kwargs)
+        content = (response.choices[0].message.content or "").strip()
+        prompt = completion = total = 0
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            prompt = int(getattr(usage, "prompt_tokens", None) or 0)
+            completion = int(getattr(usage, "completion_tokens", None) or 0)
+            total = int(getattr(usage, "total_tokens", None) or prompt + completion)
+        _persist_usage_log(model=model, feature=feature, response=response)
+        return content, {"prompt": prompt, "completion": completion, "total": total}
+    except Exception as exc:
+        _persist_usage_log(model=model, feature=feature, error=str(exc)[:300])
+        raise
+
+
 def _extract_usage(response) -> tuple[int, int, int, float | None, str | None]:
     prompt = completion = total = 0
     cost: float | None = None

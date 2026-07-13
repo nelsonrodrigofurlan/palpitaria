@@ -64,3 +64,64 @@ def test_yaml_block_parser(tmp_path: Path):
     data = load_yaml_from_md(md)
     assert data["nome"] == "demo"
     assert data["lista"] == ["a"]
+
+
+def test_plan_fixed_ordem_e_finalizar():
+    from palpitaria.agents.planner import plan_fixed, validate_plan
+
+    contracts = load_contracts(default_agent_path())
+    estado = create_state(contracts, competicoes=["BSA", "BSB"])
+    estado["opcoes"] = {"skip_sync": False, "permitir_publicar": False}
+    estado["contexto"] = {}
+    nomes = {h["nome"] for h in contracts["habilidades"]["habilidades"]}
+
+    plano = plan_fixed(estado, contracts)
+    assert plano["proxima_acao"] == "CHAMAR_FERRAMENTA"
+    assert plano["nome_ferramenta"] == "sincronizar_competicoes"
+    assert validate_plan(plano, nomes) == []
+
+    estado["chamadas_por_ferramenta"] = {
+        "sincronizar_competicoes": 1,
+        "analisar_jogos_hoje": 1,
+        "resolver_historico_ia": 1,
+        "rascunho_diario": 1,
+    }
+    estado["contexto"] = {
+        "analises": {"homologadas": [], "descartes": [], "sem_fundamento": [{"jogo": "A x B"}]},
+        "historico_ia": {"pendentes": 0},
+    }
+    fim = plan_fixed(estado, contracts)
+    assert fim["proxima_acao"] == "FINALIZAR"
+    assert "homologadas=0" in fim["criterio_sucesso"]
+
+
+def test_plan_fixed_skip_sync():
+    from palpitaria.agents.planner import plan_fixed
+
+    contracts = load_contracts(default_agent_path())
+    estado = create_state(contracts)
+    estado["opcoes"] = {"skip_sync": True, "permitir_publicar": False}
+    estado["contexto"] = {}
+    plano = plan_fixed(estado, contracts)
+    assert plano["nome_ferramenta"] == "analisar_jogos_hoje"
+
+
+def test_validate_plan_rejeita_acao_invalida():
+    from palpitaria.agents.planner import validate_plan
+
+    problemas = validate_plan(
+        {"proxima_acao": "sincronizar_competicoes", "criterio_sucesso": "x"},
+        {"sincronizar_competicoes"},
+    )
+    assert any("invalida" in p for p in problemas)
+
+
+def test_perceber_lista_obrigatorias():
+    from palpitaria.agents.planner import perceber
+
+    contracts = load_contracts(default_agent_path())
+    estado = create_state(contracts)
+    estado["opcoes"] = {"skip_sync": True, "permitir_publicar": False}
+    texto = perceber(estado)
+    assert "skip_sync=true" in texto
+    assert "analisar_jogos_hoje" in texto or "OBRIGATORIAS" in texto

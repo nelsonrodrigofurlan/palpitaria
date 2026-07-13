@@ -110,7 +110,7 @@ Ao analisar um jogo, identifique o `competition_code` e aplique as regras do esp
 - **Janela:** `06:00` → `06:00` do dia seguinte em `America/Sao_Paulo` (`app_day_start_hour=6`).
 - **Leituras / home / pipeline:** só fixtures com kickoff nessa janela (`for_today_only=True`).
 - **Perfis:** passo 2 atualiza seleções do dia **e** faz backfill de quem ficou sem perfil — isso **não** expande análises para jogos passados.
-- **Agente diário:** contratos em `agents/palpitaria-diario/` + runtime `python -m palpitaria.agents rodar`. Sync → análise (fundamento) → histórico IA → rascunho. **Não auto-publica**; `publicar_indicacoes` é ação sensível.
+- **Agente diário:** `python -m palpitaria.agents rodar` — planejador LLM (padrão) ou `--planejador fixed`. Sync → análise (fundamento) → histórico IA → rascunho. **Não auto-publica**.
 
 ## Painel root (só fundador)
 

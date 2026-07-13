@@ -63,6 +63,7 @@ def cmd_rodar(args: argparse.Namespace) -> int:
         canal=args.canal,
         aprovado_por=args.aprovado_por or "",
         skip_sync=args.skip_sync,
+        planejador=args.planejador,
     )
     if args.json:
         print(json.dumps(artifact, ensure_ascii=False, indent=2, default=str))
@@ -78,6 +79,7 @@ def cmd_rascunho(args: argparse.Namespace) -> int:
         narrar=not args.sem_narrar,
         persistir=not args.sem_persistir,
         skip_sync=True,
+        planejador=args.planejador,
     )
     if args.json:
         print(json.dumps(artifact, ensure_ascii=False, indent=2, default=str))
@@ -87,7 +89,7 @@ def cmd_rascunho(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m palpitaria.agents",
-        description="Runtime minimo de agentes Palpitaria FC",
+        description="Runtime de agentes Palpitaria FC",
     )
     sub = parser.add_subparsers(dest="comando", required=True)
 
@@ -95,11 +97,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_val.add_argument("--agente", default=None, help="caminho ou nome (default: palpitaria-diario)")
     p_val.set_defaults(func=cmd_validar)
 
-    p_run = sub.add_parser("rodar", help="ciclo diario: sync → analise → historico → rascunho")
+    p_run = sub.add_parser("rodar", help="ciclo diario com planejador LLM (ou fixed)")
     p_run.add_argument("--agente", default=None)
     p_run.add_argument("--comps", default="BSA,BSB")
     p_run.add_argument("--modo", default=None, choices=["task_based", "autonomous", "interactive", "goal_oriented"])
-    p_run.add_argument("--sem-narrar", action="store_true", help="pula LLM (so modelo)")
+    p_run.add_argument(
+        "--planejador",
+        default="llm",
+        choices=["llm", "fixed"],
+        help="llm = decide a cada etapa; fixed = ordem do contrato (sem tokens de plano)",
+    )
+    p_run.add_argument("--sem-narrar", action="store_true", help="pula LLM de narrativa dos jogos")
     p_run.add_argument("--sem-persistir", action="store_true")
     p_run.add_argument("--skip-sync", action="store_true")
     p_run.add_argument("--publicar", action="store_true", help="tenta publicar (pede confirmacao)")
@@ -112,6 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_draft.add_argument("--agente", default=None)
     p_draft.add_argument("--comps", default="BSA,BSB")
     p_draft.add_argument("--modo", default=None)
+    p_draft.add_argument("--planejador", default="llm", choices=["llm", "fixed"])
     p_draft.add_argument("--sem-narrar", action="store_true")
     p_draft.add_argument("--sem-persistir", action="store_true")
     p_draft.add_argument("--json", action="store_true")
