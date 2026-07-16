@@ -2,7 +2,70 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from palpitaria.models import Team, Fixture, TeamProfile
-from palpitaria.services.analyzer import analyze_fixture, build_criteria_brief, get_today_context
+from palpitaria.services.analyzer import (
+    analyze_fixture,
+    build_criteria_brief,
+    count_teams_with_profiles,
+    get_today_context,
+)
+
+
+def test_count_teams_with_profiles_scoped_to_competition(db_session):
+    bsa_home = Team(external_id=901, name="BSA Home")
+    bsa_away = Team(external_id=902, name="BSA Away")
+    bsb_home = Team(external_id=903, name="BSB Home")
+    bsb_away = Team(external_id=904, name="BSB Away")
+    db_session.add_all([bsa_home, bsa_away, bsb_home, bsb_away])
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            Fixture(
+                external_id=901,
+                competition_code="TEST_A",
+                season=2026,
+                utc_date=datetime.utcnow(),
+                home_team_id=bsa_home.id,
+                away_team_id=bsa_away.id,
+            ),
+            Fixture(
+                external_id=902,
+                competition_code="TEST_B",
+                season=2026,
+                utc_date=datetime.utcnow(),
+                home_team_id=bsb_home.id,
+                away_team_id=bsb_away.id,
+            ),
+            TeamProfile(
+                team_id=bsa_home.id,
+                matches_sampled=5,
+                avg_goals_scored=1.0,
+                avg_goals_conceded=1.0,
+                zero_zero_rate=0.0,
+                over_05_rate=1.0,
+                over_15_rate=0.5,
+                over_25_rate=0.2,
+                win_rate=0.4,
+                both_teams_score_rate=0.5,
+            ),
+            TeamProfile(
+                team_id=bsa_away.id,
+                matches_sampled=5,
+                avg_goals_scored=1.0,
+                avg_goals_conceded=1.0,
+                zero_zero_rate=0.0,
+                over_05_rate=1.0,
+                over_15_rate=0.5,
+                over_25_rate=0.2,
+                win_rate=0.4,
+                both_teams_score_rate=0.5,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    assert count_teams_with_profiles(db_session, "TEST_A") == (2, 2)
+    assert count_teams_with_profiles(db_session, "TEST_B") == (0, 2)
 
 def test_analyze_fixture_excluded_no_profile(db_session):
     # Setup

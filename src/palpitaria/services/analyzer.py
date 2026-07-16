@@ -962,13 +962,32 @@ def attach_saved_reports(db: Session, analyses: list[FixtureAnalysis]) -> None:
         )
 
 
-def count_teams_with_profiles(db: Session) -> tuple[int, int]:
+def count_teams_with_profiles(
+    db: Session,
+    competition_code: str | None = None,
+) -> tuple[int, int]:
     from palpitaria.models import Team
 
-    total = db.query(Team).count()
+    query = db.query(Team)
+    if competition_code:
+        team_ids = {
+            team_id
+            for fixture_team_ids in db.query(
+                Fixture.home_team_id,
+                Fixture.away_team_id,
+            )
+            .filter(Fixture.competition_code == competition_code)
+            .all()
+            for team_id in fixture_team_ids
+        }
+        if not team_ids:
+            return 0, 0
+        query = query.filter(Team.id.in_(team_ids))
+
+    teams = query.all()
     ready = 0
-    for team in db.query(Team).all():
+    for team in teams:
         profile = latest_profile(db, team.id)
         if profile and profile.matches_sampled >= 1:
             ready += 1
-    return ready, total
+    return ready, len(teams)

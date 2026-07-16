@@ -240,7 +240,7 @@ def _render_home(request: Request, db: Session, user, comp_code: str | None = No
     attach_saved_reports(db, analyses)
     candidates = [a for a in analyses if not a.excluded]
     discarded = [a for a in analyses if a.excluded]
-    profiles_ready, profiles_total = count_teams_with_profiles(db)
+    profiles_ready, profiles_total = count_teams_with_profiles(db, comp_code)
     today_count = count_today_fixtures(db, competition_code=comp_code)
     upcoming_count = count_upcoming_fixtures(db, competition_code=comp_code)
 
@@ -404,9 +404,9 @@ def sync_profiles(request: Request, comp: str | None = None, db: Session = Depen
             competition_code=comp_code,
             today_only=True,
         )
-        ready, total = count_teams_with_profiles(db)
+        ready, total = count_teams_with_profiles(db, comp_code)
         today_ctx = get_today_context()
-        add_log(f"Concluído: {profiles} perfil(is) hoje. Total no banco: {ready}/{total}.")
+        add_log(f"Concluído: {profiles} perfil(is) hoje. {comp_code}: {ready}/{total}.")
     except FootballDataError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
@@ -655,8 +655,8 @@ def _run_full_pipeline_work(comp_code: str, run_id: int | None = None) -> None:
         )
         if _pipeline_aborted():
             raise RuntimeError("Pipeline abortado")
-        ready, total = count_teams_with_profiles(db)
-        add_log(f"✓ Perfis API atualizados: {profiles} hoje. Total: {ready}/{total}.")
+        ready, total = count_teams_with_profiles(db, comp_code)
+        add_log(f"✓ Perfis API atualizados: {profiles} hoje. {comp_code}: {ready}/{total}.")
 
         if _pipeline_aborted():
             raise RuntimeError("Pipeline abortado")
