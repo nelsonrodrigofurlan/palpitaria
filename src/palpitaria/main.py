@@ -1,5 +1,6 @@
 import json
 import threading
+import io
 from collections import deque
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -1835,6 +1836,31 @@ def health(db: Session = Depends(get_db)) -> dict:
         payload["status"] = "degraded"
         payload["database_error"] = str(exc)
     return payload
+
+
+@app.get("/proxy-crest")
+async def proxy_crest(url: str):
+    """Proxy para evitar problemas de CORS ao gerar imagem com html2canvas."""
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing URL")
+
+    # Permitir apenas domínios conhecidos de escudos para segurança
+    allowed_domains = ["crests.football-data.org", "wikipedia.org", "wikimedia.org"]
+    if not any(domain in url for domain in allowed_domains):
+         raise HTTPException(status_code=403, detail="Unauthorized image domain")
+
+    import httpx
+    async with httpx.AsyncClient() as client:
+        try:
+            # repassa headers básicos (user-agent) para evitar bloqueio
+            headers = {"User-Agent": "PalpitariaFC/1.0"}
+            resp = await client.get(url, timeout=10.0, headers=headers, follow_redirects=True)
+            resp.raise_for_status()
+
+            content_type = resp.headers.get("content-type", "image/png")
+            return StreamingResponse(io.BytesIO(resp.content), media_type=content_type)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Proxy error: {e}")
 
 
 def run() -> None:

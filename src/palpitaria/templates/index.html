@@ -433,6 +433,52 @@
     margin-bottom: 0.75rem;
     box-shadow: 0 2px 4px rgba(0,0,0,0.02);
   }
+  .summary-item-layout {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+  }
+  .summary-item-copy {
+    flex: 1;
+    min-width: 0;
+  }
+  .summary-clubs {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    flex: 0 0 116px;
+  }
+  .summary-club-crest,
+  .summary-club-fallback {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+  }
+  .summary-club-crest {
+    display: block;
+    object-fit: contain;
+    padding: 4px;
+    box-sizing: border-box;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    filter: drop-shadow(0 2px 3px rgb(15 23 42 / 0.12));
+  }
+  .summary-club-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    color: #3730a3;
+    font-size: 0.9rem;
+    font-weight: 900;
+  }
+  .summary-club-versus {
+    color: #94a3b8;
+    font-size: 0.72rem;
+    font-weight: 900;
+  }
   .summary-item-title {
     font-weight: 700;
     font-size: 1rem;
@@ -491,6 +537,23 @@
     display: flex; align-items: center; justify-content: center;
     font-weight: bold;
   }
+  @media (max-width: 440px) {
+    .summary-clubs {
+      flex-basis: 88px;
+      gap: 0.2rem;
+    }
+    .summary-club-crest,
+    .summary-club-fallback {
+      width: 34px;
+      height: 34px;
+    }
+    .summary-item-title {
+      font-size: 0.9rem;
+    }
+    .summary-item-market {
+      font-size: 1rem;
+    }
+  }
 </style>
 
 <div class="summary-modal" id="summary-modal">
@@ -509,10 +572,29 @@
       {% for a in candidates %}
         {% if a.best_pick %}
         <div class="summary-item" style="border-left: 4px solid #22c55e;">
-          <div class="summary-item-title">{{ a.home_name }} x {{ a.away_name }}</div>
-          <div class="summary-item-market">{{ a.best_pick.market }}</div>
-          <div class="summary-item-meta">
-            🎯 Confiança: {{ a.goal_potential_score }}% | ⏰ {{ a.utc_date | kickoff(app_timezone) }}
+          <div class="summary-item-layout">
+            <div class="summary-item-copy">
+              <div class="summary-item-title">{{ a.home_name }} x {{ a.away_name }}</div>
+              <div class="summary-item-market">{{ a.best_pick.market }}</div>
+              <div class="summary-item-meta">
+                🎯 Confiança: {{ a.goal_potential_score }}% | ⏰ {{ a.utc_date | kickoff(app_timezone) }}
+              </div>
+            </div>
+            <div class="summary-clubs" aria-label="{{ a.home_name }} contra {{ a.away_name }}">
+              {% if a.home_crest %}
+              <img src="/proxy-crest?url={{ a.home_crest }}" alt="Escudo {{ a.home_name }}" class="summary-club-crest" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+              <span class="summary-club-fallback" style="display:none;">{{ a.home_name[0] | upper }}</span>
+              {% else %}
+              <span class="summary-club-fallback">{{ a.home_name[0] | upper }}</span>
+              {% endif %}
+              <span class="summary-club-versus">×</span>
+              {% if a.away_crest %}
+              <img src="/proxy-crest?url={{ a.away_crest }}" alt="Escudo {{ a.away_name }}" class="summary-club-crest" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+              <span class="summary-club-fallback" style="display:none;">{{ a.away_name[0] | upper }}</span>
+              {% else %}
+              <span class="summary-club-fallback">{{ a.away_name[0] | upper }}</span>
+              {% endif %}
+            </div>
           </div>
         </div>
         {% endif %}
@@ -526,10 +608,29 @@
       {% for a in discarded %}
         {% if a.best_pick %}
         <div class="summary-item" style="border-left: 4px solid #eab308;">
-          <div class="summary-item-title">{{ a.home_name }} x {{ a.away_name }}</div>
-          <div class="summary-item-market">{{ a.best_pick.market }}</div>
-          <div class="summary-item-meta">
-            ℹ️ Alternativo | ⏰ {{ a.utc_date | kickoff(app_timezone) }}
+          <div class="summary-item-layout">
+            <div class="summary-item-copy">
+              <div class="summary-item-title">{{ a.home_name }} x {{ a.away_name }}</div>
+              <div class="summary-item-market">{{ a.best_pick.market }}</div>
+              <div class="summary-item-meta">
+                ℹ️ Alternativo | ⏰ {{ a.utc_date | kickoff(app_timezone) }}
+              </div>
+            </div>
+            <div class="summary-clubs" aria-label="{{ a.home_name }} contra {{ a.away_name }}">
+              {% if a.home_crest %}
+              <img src="/proxy-crest?url={{ a.home_crest }}" alt="Escudo {{ a.home_name }}" class="summary-club-crest" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+              <span class="summary-club-fallback" style="display:none;">{{ a.home_name[0] | upper }}</span>
+              {% else %}
+              <span class="summary-club-fallback">{{ a.home_name[0] | upper }}</span>
+              {% endif %}
+              <span class="summary-club-versus">×</span>
+              {% if a.away_crest %}
+              <img src="/proxy-crest?url={{ a.away_crest }}" alt="Escudo {{ a.away_name }}" class="summary-club-crest" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+              <span class="summary-club-fallback" style="display:none;">{{ a.away_name[0] | upper }}</span>
+              {% else %}
+              <span class="summary-club-fallback">{{ a.away_name[0] | upper }}</span>
+              {% endif %}
+            </div>
           </div>
         </div>
         {% endif %}
