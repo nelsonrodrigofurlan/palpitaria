@@ -22,6 +22,9 @@ from palpitaria.services.ai_tracker import (
         ("LAY CORRECT SCORE: 0-0", "A", "B", 0, 0, "MISS"),
         ("LAY CORRECT SCORE: 1-0", "A", "B", 1, 0, "MISS"),
         ("LAY CORRECT SCORE: 1-0", "A", "B", 2, 0, "HIT"),
+        ("HANDICAP ASIÁTICO: Portugal -1", "Portugal", "RD Congo", 3, 0, "HIT"),
+        ("HANDICAP ASIÁTICO: Portugal -1", "Portugal", "RD Congo", 1, 0, "VOID"),
+        ("HANDICAP ASIÁTICO: Portugal -1", "Portugal", "RD Congo", 0, 1, "MISS"),
     ],
 )
 def test_evaluate_market(market, home, away, hs, as_, expected):

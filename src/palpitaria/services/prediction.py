@@ -243,15 +243,24 @@ def _select_market(
             f"Anti-zero: P(Over 0.5)={p_over_05:.0%}, P(0-0)={p_zz:.0%}.",
         )
 
-    # Alternativa 1X2 só com favorito claro
+    # Alternativa só com favorito VALIDADO (nunca LAY 0-0 — equivale a Over 0.5)
     fav_p, fav_name = (p_home, home_name) if p_home >= p_away else (p_away, away_name)
-    if fav_p >= 0.55:
+    if fav_p >= 0.58:
+        # Favorito esmagador → handicap -1; favorito claro → ML
+        if fav_p >= 0.68 and total_lam >= 2.2:
+            return (
+                f"HANDICAP ASIÁTICO: {fav_name} -1",
+                fav_p,
+                "STRONG" if fav_p >= 0.72 else "CANDIDATE",
+                "alternate",
+                f"Sem Over homologado — favorito forte P={fav_p:.0%}; linha -1 ({profile.code}).",
+            )
         return (
             f"VITÓRIA: {fav_name}",
             fav_p,
             "CANDIDATE",
             "alternate",
-            f"Sem base sólida de Over — favorito modelo P={fav_p:.0%} ({profile.code}).",
+            f"Sem base sólida de Over — favorito validado P={fav_p:.0%} ({profile.code}).",
         )
 
     return (
@@ -259,7 +268,7 @@ def _select_market(
         0.0,
         "SKIP",
         "skip",
-        f"Descarte: probs de gols abaixo do piso ({profile.code}, λ={total_lam:.2f}).",
+        f"Descarte total: sem Over nem favorito validado ({profile.code}, λ={total_lam:.2f}).",
     )
 
 

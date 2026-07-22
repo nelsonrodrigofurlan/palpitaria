@@ -21,7 +21,7 @@ Leitura de EXCHANGE (Betfair): objetivo, escaneável, português do Brasil.
 Prioridade de mercado:
 1. Se odds.ML do favorito < 1.50 → NÃO empurre vitória seca; priorize handicap asiático (-1 / +2) ou gols (Over).
 2. Jogo homologado no filtro de gols → Principal em Over (1.5 ou 2.5 conforme números); alternativa pode ser handicap.
-3. Jogo fora do filtro (excluded) → Principal em handicap do favorito ou lay de placar baixo; vitória seca só como Conservadora.
+3. Jogo fora do filtro (excluded) → Principal em handicap do favorito (-1) ou vitória seca se favorito validado. NUNCA Lay CS 0-0.
 4. Cite odds reais do pacote (odds.lines) em odds_hint — ex.: "@ 1.72" ou "Over 2.5 @ 2.10". Se não houver linha, use "—".
 
 Labels obrigatórios (use exatamente um por estratégia):
@@ -30,7 +30,7 @@ Labels obrigatórios (use exatamente um por estratégia):
 Regras:
 - 2 ou 3 estratégias ordenadas por prioridade.
 - Integre stats, bastidores, contexto, best_pick e odds.lines.
-- Mercado concreto: "Over 1.5", "Handicap Inglaterra -1", "Lay CS 0-0", etc.
+- Mercado concreto: "Over 1.5", "Handicap Inglaterra -1", "Vitória Flamengo", etc. Sem Lay CS 0-0.
 - risk: "baixo" | "médio" | "alto"
 - side: "BACK" | "LAY" | "NEUTRO"
 - thesis: no máximo 2 frases curtas.

@@ -36,7 +36,7 @@ Skill de contexto e workflow. Leia [context.md](context.md) antes de propor cód
 | Filosofia | **Foco em Gols** — Priorizar mercados Over; **Liberdade de Descarte Total** se houver dúvida ou dados insuficientes |
 | Filiais | Cada tipo de entrada = unidade com P&L próprio; comissão % por filial (padrão 6,5%) |
 | Saída Homologada | Apenas mercados de Gols com base sólida fundamentada |
-| Saída Alternativa | Vencedor (1X2) e Lay Correct Score (apenas se houver critério mínimo; senão descarta) |
+| Saída Alternativa | Favorito validado (1X2) ou Handicap Asiático -1; **nunca LAY 0-0** (equivale a Over 0.5) |
 | Especialização | **Skills por Campeonato** — Ver pasta `.cursor/skills/competitions/` |
 | Stack | Python para dados/ML; frontend FastAPI + HTMX |
 | Agentes | Contratos em `agents/` (padrão módulo 4) — começo: `agents/palpitaria-diario/` |
@@ -97,8 +97,8 @@ Ao analisar um jogo, identifique o `competition_code` e aplique as regras do esp
 0. **Mata-mata (qualquer campeonato)** — Fase eliminatória muda o clima tático: jogo físico, underdog fechado, 1º tempo truncado, 0-0 no 2º tempo ainda é cenário provável. Só após gol o jogo muda (placar elástico se favorito abre; bloco total se zebra abre). Código: `services/knockout_climate.py`. Pré-live: priorizar Over 1.5 / handicap / live; desconfiar de Over 2.5 baseado só na fase anterior.
 1. **Prioridade Máxima: GOLS** — O produto busca Gols (Over 0.5, 1.5, 2.5). Esta é a base do Palpitaria FC.
 2. **Base Fundamentada ou Descarte (responsabilidade)** — Sem histórico real (API/web), **não palpita**. Perfil provisório/odds-implied = **descarte total**, sem homologada nem alternativa. Palpites vão para pessoas e dinheiro real (seu e de outros): melhor zero entradas do que entrada sem fundamento. Código: `services/foundation.py`.
-3. **Homologada vs Alternativa** — Apenas mercados de Gols entram como "Homologadas". Mercados de Vencedor (1X2) e Lay Correct Score são estritamente "Alternativos", a menos que haja um favorito absoluto com base de dados massiva.
-4. **Liberdade de Descarte** — O sistema não é obrigado a palpitar 100% dos jogos. Se um jogo for diagnosticado como "muito abaixo" estatisticamente, ele deve ser descartado totalmente, não aparecendo nem como alternativa.
+3. **Homologada vs Alternativa** — Gols = Homologadas. Fora do filtro de gols: só alternativa **validada** (favorito ML ou Handicap Asiático -1). **Proibido LAY 0-0** (não tem valor — equivale a Over 0.5). Near-miss (ex.: só falhou BTTS) com favorito claro → pivô; jogo horroroso → silêncio.
+4. **Liberdade de Descarte** — Não é obrigado a palpitar 100% dos jogos. Sem Over nem favorito validado = descarte total (sem tip fantasma).
 5. **Explicabilidade primeiro** — toda indicação mostra *como* chegou lá (variáveis, pesos, tendências).
 5. **Três cenários sempre** — pessimista, realista, otimista; nunca uma única linha sem contexto.
 6. **Dados antes de modelo** — pipeline de ingestão e qualidade antes de ML fancy.

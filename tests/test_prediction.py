@@ -50,3 +50,17 @@ def test_knockout_compresses_and_avoids_over25():
 
 def test_edge_positive_when_model_above_implied():
     assert edge(0.70, 1.50) == 0.0333 or abs(edge(0.70, 1.50) - (0.70 - 1 / 1.5)) < 1e-3
+
+
+def test_low_scoring_balanced_is_skip_not_lay():
+    pred = predict_match(
+        home_scored=0.6,
+        home_conceded=0.7,
+        away_scored=0.5,
+        away_conceded=0.6,
+        competition_code="BSA",
+        home_name="A",
+        away_name="B",
+    )
+    pick = pred.as_best_pick()
+    assert pick is None or "LAY" not in (pick.get("market") or "").upper()

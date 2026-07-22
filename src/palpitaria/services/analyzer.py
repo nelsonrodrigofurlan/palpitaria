@@ -838,6 +838,44 @@ def _select_best_pick(
     }
 
 
+def _is_trash_game(
+    analysis: FixtureAnalysis,
+    home_profile,
+    away_profile,
+    combined_avg: float,
+    max_zero_zero: float,
+) -> bool:
+    """Jogo horroroso: quase sem gols, sem favorito útil — descarte total."""
+    h_g = home_profile.avg_goals_scored
+    a_g = away_profile.avg_goals_scored
+    failed = sum(1 for c in analysis.criteria if not c.passed)
+    if combined_avg < 1.35:
+        return True
+    if h_g < 0.75 and a_g < 0.75:
+        return True
+    if max_zero_zero >= 0.40 and combined_avg < 1.9:
+        return True
+    if analysis.goal_potential_score < 45 and failed >= 3:
+        return True
+    return False
+
+
+def _handicap_pick(
+    analysis: FixtureAnalysis,
+    fav: FavoriteRead,
+    *,
+    line: str,
+    reason: str,
+    verdict: str = "CANDIDATE",
+) -> dict:
+    return {
+        "market": f"HANDICAP ASIÁTICO: {fav.name} {line}",
+        "verdict": verdict,
+        "reason": reason,
+        "scope": "alternate",
+    }
+
+
 def _select_alternate_pick(
     analysis: FixtureAnalysis,
     home_profile,
@@ -846,32 +884,69 @@ def _select_alternate_pick(
     max_zero_zero: float,
     avg_btts: float,
 ) -> dict | None:
-    """Palpite fora do filtro de gols — 1X2 ou lay correct score."""
-    # Vencedor entra aqui como alternativa na maioria dos casos
-    winner = _winner_pick(analysis, home_profile, away_profile, scope="alternate")
-    if winner:
-        return winner
-
-    home_win_rate = home_profile.win_rate
-    away_win_rate = away_profile.win_rate
+    """Alternativa VALIDADA: favorito (ML) ou handicap. Sem LAY 0-0 (equivale a Over 0.5)."""
+    _ = avg_btts  # reservado — BTTS falho não invalida favorito/handicap
     n_min = min(home_profile.matches_sampled, away_profile.matches_sampled)
 
-    # Critério estrito para Lay 0-0:
-    # 1. Precisa ter pelo menos 2 jogos de amostra (segurança mínima)
-    # 2. Risco de 0-0 deve ser moderado, não altíssimo (senão é perigoso até para Lay)
-    # 3. Média de gols combinada não pode ser ridícula (ex: < 1.2)
-    if n_min >= 2 and combined_avg >= 1.5 and max_zero_zero <= 0.30:
-        return {
-            "market": "LAY CORRECT SCORE: 0-0",
-            "verdict": "CANDIDATE",
-            "reason": (
-                f"Leitura alternativa: Média combinada de {combined_avg:.1f} gols e histórico controlado de 0-0 ({max_zero_zero:.0%}). "
-                "Cenário para buscar pelo menos um gol fora do filtro principal."
-            ),
-            "scope": "alternate",
-        }
+    if _is_trash_game(analysis, home_profile, away_profile, combined_avg, max_zero_zero):
+        return None
 
-    # Se o jogo for muito ruim (ex: times que não marcam nada), retorna None (Descarte Total)
+    fav = infer_favorite(analysis, home_profile, away_profile)
+    if fav is None:
+        # Bom jogo de gols sem favorito claro → sem inventar mercado frágil
+        return None
+    if fav.basis == "outlier_guard" and fav.strength < 0.55:
+        return None
+    if fav.strength < 0.40:
+        return None
+
+    is_home = fav.name == analysis.home_name
+    fav_p = home_profile if is_home else away_profile
+    opp_p = away_profile if is_home else home_profile
+    gap_goals = fav_p.avg_goals_scored - opp_p.avg_goals_scored
+    gap_win = fav_p.win_rate - opp_p.win_rate
+
+    # Favorito dominante: BACK no ML (ou -1 se esmagador)
+    if fav.strength >= 0.62 and (gap_goals >= 0.7 or gap_win >= 0.25) and n_min >= 3:
+        if gap_goals >= 1.2 and fav_p.avg_goals_conceded <= 1.0:
+            return _handicap_pick(
+                analysis,
+                fav,
+                line="-1",
+                verdict="STRONG" if n_min >= 6 else "CANDIDATE",
+                reason=(
+                    f"Fora do filtro de gols, mas {fav.name} esmaga no confronto "
+                    f"(+{gap_goals:.1f} gols/jogo de vantagem). Handicap -1: cobrir vitória elástica."
+                ),
+            )
+        winner = _winner_pick(
+            analysis, home_profile, away_profile, scope="alternate", strong_verdict_rate=0.60
+        )
+        if winner:
+            return winner
+
+    # Favorito claro porém não esmagador / near-miss (ex.: só falhou BTTS):
+    # handicap -1 se mando+ataque; senão vitória seca com tese validada
+    if fav.strength >= 0.42 and n_min >= 3:
+        if is_home and fav_p.avg_goals_scored >= 1.3 and gap_goals >= 0.35:
+            return _handicap_pick(
+                analysis,
+                fav,
+                line="-1",
+                reason=(
+                    f"Jogo ainda jogável (média {combined_avg:.1f}). "
+                    f"{fav.name} é favorito no mando — handicap -1 em vez de forçar Over."
+                ),
+            )
+        winner = _winner_pick(
+            analysis, home_profile, away_profile, scope="alternate", strong_verdict_rate=0.70
+        )
+        if winner:
+            winner["reason"] = (
+                f"Filtro de gols não homologou, mas há favorito validado. {winner['reason']}"
+            )
+            return winner
+
     return None
 
 

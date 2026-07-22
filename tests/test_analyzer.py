@@ -146,6 +146,106 @@ def test_analyze_fixture_candidate(db_session):
     assert analysis.home_crest == "home.png"
 
 
+def test_trash_game_gets_total_discard(db_session):
+    home = Team(external_id=21, name="Weak Home")
+    away = Team(external_id=22, name="Weak Away")
+    db_session.add_all([home, away])
+    db_session.flush()
+    db_session.add_all(
+        [
+            TeamProfile(
+                team_id=home.id,
+                matches_sampled=6,
+                avg_goals_scored=0.4,
+                avg_goals_conceded=0.5,
+                zero_zero_rate=0.45,
+                over_05_rate=0.50,
+                over_15_rate=0.20,
+                over_25_rate=0.05,
+                win_rate=0.25,
+                both_teams_score_rate=0.15,
+            ),
+            TeamProfile(
+                team_id=away.id,
+                matches_sampled=6,
+                avg_goals_scored=0.5,
+                avg_goals_conceded=0.4,
+                zero_zero_rate=0.40,
+                over_05_rate=0.55,
+                over_15_rate=0.25,
+                over_25_rate=0.05,
+                win_rate=0.25,
+                both_teams_score_rate=0.15,
+            ),
+            Fixture(
+                external_id=221,
+                competition_code="BSA",
+                season=2026,
+                utc_date=datetime.utcnow(),
+                home_team_id=home.id,
+                away_team_id=away.id,
+            ),
+        ]
+    )
+    db_session.commit()
+    fixture = db_session.query(Fixture).filter_by(external_id=221).one()
+    analysis = analyze_fixture(db_session, fixture)
+    assert analysis.excluded is True
+    assert analysis.best_pick is None
+
+
+def test_near_miss_btts_pivots_to_validated_favorite(db_session):
+    """Só falhou BTTS / filtro de gols — ainda é jogo bom: ML ou AH, nunca LAY 0-0."""
+    home = Team(external_id=31, name="São Paulo")
+    away = Team(external_id=32, name="Time Médio")
+    db_session.add_all([home, away])
+    db_session.flush()
+    db_session.add_all(
+        [
+            TeamProfile(
+                team_id=home.id,
+                matches_sampled=8,
+                avg_goals_scored=1.6,
+                avg_goals_conceded=0.9,
+                zero_zero_rate=0.12,
+                over_05_rate=0.88,
+                over_15_rate=0.55,
+                over_25_rate=0.30,
+                win_rate=0.55,
+                both_teams_score_rate=0.25,
+            ),
+            TeamProfile(
+                team_id=away.id,
+                matches_sampled=8,
+                avg_goals_scored=0.9,
+                avg_goals_conceded=1.4,
+                zero_zero_rate=0.18,
+                over_05_rate=0.82,
+                over_15_rate=0.45,
+                over_25_rate=0.22,
+                win_rate=0.25,
+                both_teams_score_rate=0.30,
+            ),
+            Fixture(
+                external_id=331,
+                competition_code="BSA",
+                season=2026,
+                utc_date=datetime.utcnow(),
+                home_team_id=home.id,
+                away_team_id=away.id,
+            ),
+        ]
+    )
+    db_session.commit()
+    fixture = db_session.query(Fixture).filter_by(external_id=331).one()
+    analysis = analyze_fixture(db_session, fixture)
+    assert analysis.best_pick is not None
+    market = analysis.best_pick.get("market", "")
+    assert "LAY" not in market.upper()
+    assert "São Paulo" in market
+    assert market.startswith("VITÓRIA:") or market.startswith("HANDICAP ASIÁTICO:")
+
+
 def test_analyze_fixture_excluded_still_has_alternate_pick(db_session):
     home = Team(external_id=5, name="Germany")
     away = Team(external_id=6, name="Curaçao")
@@ -195,7 +295,9 @@ def test_analyze_fixture_excluded_still_has_alternate_pick(db_session):
     assert analysis.best_pick is not None
     assert analysis.best_pick.get("scope") == "alternate"
     market = analysis.best_pick.get("market", "")
-    assert "VITÓRIA: Alemanha" == market or market.startswith("VITÓRIA: Alemanha")
+    assert "LAY" not in market.upper()
+    assert "Alemanha" in market
+    assert market.startswith("VITÓRIA:") or market.startswith("HANDICAP ASIÁTICO:")
     assert "Cura" not in market
 
     combined = next(c for c in analysis.criteria if c.name == "combined_avg_goals")
@@ -251,10 +353,10 @@ def test_criteria_brief_argentina_algeria_shape(db_session):
 
     assert brief is not None
     assert "Argentina x Argélia" in brief["match"]
-    assert len(brief["lines"]) == 6
-    assert "2.5 g/j" in brief["lines"][0]
+    assert len(brief["lines"]) == 4
+    assert "2.5" in brief["lines"][0]
     assert "0%" in brief["lines"][3]
-    assert "gap" in brief["verdict"]
+    assert "aprovados" in brief["verdict"]
     assert brief["home_form"]["recent"][0].startswith("10/06")
 
 

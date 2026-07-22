@@ -35,6 +35,8 @@ def normalize_market_group(market: str) -> str:
     m = normalize_market(market)
     if m.startswith("VITÓRIA:") or m.startswith("VITORIA:"):
         return "VITÓRIA"
+    if m.startswith("HANDICAP ASIÁTICO:") or m.startswith("HANDICAP ASIATICO:"):
+        return "HANDICAP ASIÁTICO"
     if m.startswith("LAY CORRECT SCORE:"):
         return "LAY CORRECT SCORE"
     return market.strip()
@@ -73,6 +75,25 @@ def evaluate_market(
     if m.startswith("VITÓRIA:") or m.startswith("VITORIA:"):
         team = market.split(":", 1)[1].strip()
         return "HIT" if _team_won(team, home_name, away_name, home_score, away_score) else "MISS"
+
+    if m.startswith("HANDICAP ASIÁTICO:") or m.startswith("HANDICAP ASIATICO:"):
+        # Formato: "HANDICAP ASIÁTICO: Time -1" | "+1"
+        rest = market.split(":", 1)[1].strip()
+        line = -1.0
+        team = rest
+        for token in rest.replace(",", ".").split():
+            if token.startswith("-") or token.startswith("+"):
+                try:
+                    line = float(token)
+                    team = rest.replace(token, "").strip()
+                except ValueError:
+                    pass
+        fav_home = _norm_name(team) in _norm_name(home_name) or _norm_name(home_name) in _norm_name(team)
+        margin = (home_score - away_score) if fav_home else (away_score - home_score)
+        covered = margin + line
+        if abs(covered) < 1e-9:
+            return "VOID"
+        return "HIT" if covered > 0 else "MISS"
 
     if "LAY CORRECT SCORE: 0-0" in m or "LAY 0-0" in m:
         return "HIT" if total > 0 else "MISS"

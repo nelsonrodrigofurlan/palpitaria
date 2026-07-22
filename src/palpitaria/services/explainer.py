@@ -160,22 +160,24 @@ Retorne SOMENTE JSON válido:
 }
 """
 
-EXCLUDED_PICK_REFINE_SYSTEM = """Você decide o PALPITE ALTERNATIVO da Palpitaria FC para UM jogo FORA do filtro anti-zero-gols.
+EXCLUDED_PICK_REFINE_SYSTEM = """Você confirma o PALPITE ALTERNATIVO da Palpitaria FC para UM jogo FORA do filtro de gols.
 
-O jogo foi DESCARTADO para mercados Over (0.5/1.5/2.5). Isso NÃO impede palpite em outros mercados.
+O MODELO JÁ SUGERIU numeric_suggestion. Você NÃO inventa mercado novo.
 
-Entradas: numeric_suggestion, home_stats, away_stats, home_insights, away_insights, match_context, criteria, exclusion_reasons.
+Mercados permitidos (só se numeric_suggestion já trouxer um deles):
+- VITÓRIA: [nome do time] — favorito validado
+- HANDICAP ASIÁTICO: [nome] -1 — favorito forte cobrindo vitória elástica
 
-Mercados permitidos (escolha UM):
-- VITÓRIA: [nome do time] — favoritismo claro, jogo tende a ser unilateral
-- LAY CORRECT SCORE: 0-0 — jogo fechado mas leitura de que haverá pelo menos 1 gol
-- LAY CORRECT SCORE: 1-0 — favorito vence magro, padrão de vitória mínima
-- LAY CORRECT SCORE: 2-0 — favorito domina sem trocação (BTTS baixo)
+PROIBIDO:
+- LAY CORRECT SCORE / LAY 0-0 (não tem valor — equivale a Over 0.5)
+- OVER 0.5/1.5/2.5 (filtro de gols já vetou)
+- Qualquer tip só para "ter palpite"
+
+Se numeric_suggestion for null/vazio ou o jogo for horroroso (sem gols, sem favorito): market=null.
 
 Regras:
-- NUNCA recomende OVER 0.5/1.5/2.5 — o filtro de gols já vetou.
-- Integre bastidores + histórico web.
-- Explique por que este mercado faz sentido APESAR do descarte no filtro de gols.
+- Prefira manter o mercado do modelo; só refine a reason.
+- Integre bastidores + histórico web na reason.
 - Não invente dados.
 
 Retorne SOMENTE JSON válido:
@@ -191,67 +193,16 @@ EXCLUDED_EXPLAIN_SUFFIX = """
 NOTA: Este jogo está FORA do filtro anti-zero-gols (Over descartado).
 Mesmo formato: só prosa em português, 2–3 parágrafos, sem markdown.
 - Parágrafo 1: por que o filtro de gols descartou.
-- Parágrafo 2: fundamentar o palpite alternativo (vitória ou lay correct score).
+- Parágrafo 2: fundamentar o palpite alternativo (vitória ou handicap asiático — nunca LAY 0-0).
 - Parágrafo 3: riscos do palpite alternativo.
 """
 
 
 def refine_best_pick(analysis: FixtureAnalysis) -> dict | None:
-    """LLM final pick — merges numeric baseline with web stats and backstage."""
+    """Pass-through: modelo já decidiu. LLM não sobrescreve mercado (0 token aqui)."""
     if not analysis.best_pick:
         return None
-
-    if not settings.has_llm:
-        return adjust_best_pick_for_knockout(analysis.best_pick, stage=analysis.stage)
-
-    system = EXCLUDED_PICK_REFINE_SYSTEM if analysis.excluded else PICK_REFINE_SYSTEM
-    if getattr(analysis, "is_knockout", False):
-        system += llm_knockout_suffix()
-    payload = {
-        "home": analysis.home_name,
-        "away": analysis.away_name,
-        "is_knockout": getattr(analysis, "is_knockout", False),
-        "stage": analysis.stage,
-        "excluded": analysis.excluded,
-        "exclusion_reasons": analysis.exclusion_reasons,
-        "goal_potential_score": analysis.goal_potential_score,
-        "criteria": [
-            {"name": c.name, "value": c.value, "passed": c.passed, "level": c.level, "detail": c.detail}
-            for c in analysis.criteria
-        ],
-        "home_stats": analysis.home_stats_meta,
-        "away_stats": analysis.away_stats_meta,
-        "home_insights": analysis.home_insights,
-        "away_insights": analysis.away_insights,
-        "match_context": analysis.match_context,
-        "numeric_suggestion": analysis.best_pick,
-    }
-
-    try:
-        user_content = f"Dados para decisão de mercado:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
-        response = chat_completion(system, user_content, temperature=0.25, max_tokens=800, feature="explainer_pick")
-        parsed = _parse_json_from_llm(response)
-        if not parsed or not parsed.get("market"):
-            return adjust_best_pick_for_knockout(analysis.best_pick, stage=analysis.stage)
-        market = parsed["market"]
-        home_p = profile_from_meta(analysis.home_stats_meta)
-        away_p = profile_from_meta(analysis.away_stats_meta)
-        if market.startswith("VITÓRIA:") and home_p and away_p:
-            picked = market.replace("VITÓRIA:", "", 1).strip()
-            fav = infer_favorite(analysis, home_p, away_p)
-            if fav and picked != fav.name:
-                return adjust_best_pick_for_knockout(analysis.best_pick, stage=analysis.stage)
-        refined = {
-            "market": market,
-            "verdict": parsed.get("verdict") or analysis.best_pick.get("verdict", "CANDIDATE"),
-            "reason": parsed.get("reason") or analysis.best_pick.get("reason", ""),
-            "scope": analysis.best_pick.get("scope", "alternate" if analysis.excluded else "goals"),
-        }
-        if parsed.get("web_factor"):
-            refined["web_factor"] = parsed["web_factor"]
-        return adjust_best_pick_for_knockout(refined, stage=analysis.stage)
-    except Exception:
-        return adjust_best_pick_for_knockout(analysis.best_pick, stage=analysis.stage)
+    return adjust_best_pick_for_knockout(analysis.best_pick, stage=analysis.stage)
 
 
 def _compose_explanation_from_analysis(analysis: FixtureAnalysis, *, compact: bool = False) -> str:
