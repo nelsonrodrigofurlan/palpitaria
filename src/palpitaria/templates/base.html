@@ -264,12 +264,15 @@
     .match-title { font-weight: 800; font-size: 1.2rem; color: var(--blue); }
     .team-crest {
       height: 24px;
-      width: auto;
-      border-radius: 50%;
+      width: 24px;
+      object-fit: contain;
+      border-radius: 6px;
       border: 1px solid rgba(0, 0, 0, 0.12);
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.06);
       background: #fff;
       vertical-align: middle;
+      padding: 1px;
+      box-sizing: border-box;
     }
     .meta { color: var(--muted); font-size: .9rem; margin-bottom: 1rem; }
     table { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 1rem; }
