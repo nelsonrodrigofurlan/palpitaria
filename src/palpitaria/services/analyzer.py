@@ -13,7 +13,10 @@ from palpitaria.models import Fixture
 from palpitaria.services.ingest import latest_profile
 from palpitaria.services.team_names import localize_team_name
 from palpitaria.services.chat_service import get_valid_insights_for_team
-from palpitaria.services.competitions import get_competition_profile
+from palpitaria.services.competitions import (
+    get_competition_profile,
+    resolve_competition_codes,
+)
 from palpitaria.services.foundation import both_profiles_solid
 from palpitaria.services.knockout_climate import (
     adjust_best_pick_for_knockout,
@@ -98,6 +101,7 @@ class FixtureAnalysis:
     strategy_card: dict | None = None  # 2–3 estratégias estruturadas (exchange)
     is_knockout: bool = False  # Fase eliminatória (mata-mata)
     prediction: dict | None = None  # Saída do motor Poisson (probs + λ)
+    competition_code: str | None = None
     venue_stadium: str | None = None
     venue_city: str | None = None
     venue_state: str | None = None
@@ -153,31 +157,52 @@ def get_today_context(tz_name: str | None = None, *, now: datetime | None = None
     )
 
 
-def _scheduled_fixtures_query(db: Session, competition_code: str | None = None):
+def _scheduled_fixtures_query(
+    db: Session,
+    competition_code: str | None = None,
+    competition_codes: list[str] | None = None,
+):
+    """Fixtures agendadas. Sem filtro explícito → todos os campeonatos ativos."""
+    codes = resolve_competition_codes(
+        db, competition_code=competition_code, competition_codes=competition_codes
+    )
     query = (
         db.query(Fixture)
         .options(joinedload(Fixture.home_team), joinedload(Fixture.away_team))
         .filter(Fixture.status.in_(["SCHEDULED", "TIMED", "IN_PLAY"]))
     )
-    if competition_code:
-        query = query.filter(Fixture.competition_code == competition_code)
-    else:
-        query = query.filter(Fixture.competition_code == settings.world_cup_code)
-    return query
+    if not codes:
+        return query.filter(False)
+    if len(codes) == 1:
+        return query.filter(Fixture.competition_code == codes[0])
+    return query.filter(Fixture.competition_code.in_(codes))
 
 
-def count_today_fixtures(db: Session, tz_name: str | None = None, competition_code: str | None = None) -> int:
+def count_today_fixtures(
+    db: Session,
+    tz_name: str | None = None,
+    competition_code: str | None = None,
+    competition_codes: list[str] | None = None,
+) -> int:
     ctx = get_today_context(tz_name)
     return (
-        _scheduled_fixtures_query(db, competition_code=competition_code)
+        _scheduled_fixtures_query(
+            db, competition_code=competition_code, competition_codes=competition_codes
+        )
         .filter(Fixture.utc_date >= ctx.start_utc)
         .filter(Fixture.utc_date < ctx.end_utc)
         .count()
     )
 
 
-def count_upcoming_fixtures(db: Session, competition_code: str | None = None) -> int:
-    return _scheduled_fixtures_query(db, competition_code=competition_code).count()
+def count_upcoming_fixtures(
+    db: Session,
+    competition_code: str | None = None,
+    competition_codes: list[str] | None = None,
+) -> int:
+    return _scheduled_fixtures_query(
+        db, competition_code=competition_code, competition_codes=competition_codes
+    ).count()
 
 
 def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
@@ -201,6 +226,7 @@ def analyze_fixture(db: Session, fixture: Fixture) -> FixtureAnalysis:
         group_name=fixture.group_name,
         goal_potential_score=0.0,
         excluded=False,
+        competition_code=comp_code,
         venue_stadium=fixture.venue_stadium,
         venue_city=fixture.venue_city,
         venue_state=fixture.venue_state,
@@ -958,8 +984,11 @@ def analyze_upcoming(
     days: int | None = None,
     tz_name: str | None = None,
     competition_code: str | None = None,
+    competition_codes: list[str] | None = None,
 ) -> list[FixtureAnalysis]:
-    query = _scheduled_fixtures_query(db, competition_code=competition_code)
+    query = _scheduled_fixtures_query(
+        db, competition_code=competition_code, competition_codes=competition_codes
+    )
     ctx = get_today_context(tz_name)
     if days is not None:
         end_utc = ctx.start_utc + timedelta(days=days)
@@ -1040,18 +1069,22 @@ def attach_saved_reports(db: Session, analyses: list[FixtureAnalysis]) -> None:
 def count_teams_with_profiles(
     db: Session,
     competition_code: str | None = None,
+    competition_codes: list[str] | None = None,
 ) -> tuple[int, int]:
     from palpitaria.models import Team
 
+    codes = resolve_competition_codes(
+        db, competition_code=competition_code, competition_codes=competition_codes
+    )
     query = db.query(Team)
-    if competition_code:
+    if codes:
         team_ids = {
             team_id
             for fixture_team_ids in db.query(
                 Fixture.home_team_id,
                 Fixture.away_team_id,
             )
-            .filter(Fixture.competition_code == competition_code)
+            .filter(Fixture.competition_code.in_(codes))
             .all()
             for team_id in fixture_team_ids
         }

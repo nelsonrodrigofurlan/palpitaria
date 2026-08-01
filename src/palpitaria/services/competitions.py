@@ -77,20 +77,55 @@ def get_competition_profile(code: str | None) -> CompetitionProfile:
     return PROFILES.get(code.upper(), PROFILES.get("BSA", next(iter(PROFILES.values()))))
 
 
+def active_competition_codes(db) -> list[str]:
+    """Códigos das competições ativas (ordem estável)."""
+    from palpitaria.models import Competition
+
+    rows = (
+        db.query(Competition)
+        .filter(Competition.is_active.is_(True))
+        .order_by(Competition.code)
+        .all()
+    )
+    return [r.code for r in rows]
+
+
+def resolve_competition_codes(
+    db,
+    competition_code: str | None = None,
+    competition_codes: list[str] | None = None,
+) -> list[str]:
+    """
+    Resolve filtro de campeonato.
+    - lista explícita → essa lista
+    - um código → [código]
+    - None → todos os ativos (visão geral do dia)
+    """
+    if competition_codes is not None:
+        return [c.strip().upper() for c in competition_codes if c and str(c).strip()]
+    if competition_code:
+        code = competition_code.strip().upper()
+        if code == "ALL":
+            return active_competition_codes(db)
+        return [code]
+    return active_competition_codes(db)
+
+
 def ensure_competitions(db, *, activate_brazil: bool = True, deactivate_wc: bool = False) -> list[str]:
-    """Garante linhas BSA/BSB (e WC) na tabela competitions."""
+    """Garante linhas BSA/BSB/CDB/WC na tabela competitions."""
     from palpitaria.models import Competition
 
     touched: list[str] = []
     for code, profile in PROFILES.items():
-        if code not in ("BSA", "BSB", "WC"):
-            continue
         row = db.query(Competition).filter_by(code=code).one_or_none()
         if row is None:
             active = True
             if code == "WC" and deactivate_wc:
                 active = False
             elif code in ("BSA", "BSB") and not activate_brazil:
+                active = False
+            elif code == "CDB":
+                # CDB entra inativa por padrão; ativar manualmente no admin quando a fase rolar
                 active = False
             db.add(
                 Competition(

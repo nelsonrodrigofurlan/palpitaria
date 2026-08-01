@@ -193,17 +193,47 @@ def branch_period_summary(
     branch_id: int,
     year: int,
     month: int,
-    competition_code: str,
+    competition_code: str | None,
 ) -> BranchMonthlySummary | None:
-    return (
-        db.query(BranchMonthlySummary)
-        .filter_by(
-            branch_id=branch_id,
-            year=year,
-            month=month,
-            competition_code=competition_code,
+    """Resumo mensal. Sem competition_code → agrega todas as comps da filial."""
+    if competition_code:
+        return (
+            db.query(BranchMonthlySummary)
+            .filter_by(
+                branch_id=branch_id,
+                year=year,
+                month=month,
+                competition_code=competition_code,
+            )
+            .one_or_none()
         )
-        .one_or_none()
+
+    rows = (
+        db.query(BranchMonthlySummary)
+        .filter_by(branch_id=branch_id, year=year, month=month)
+        .all()
+    )
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return rows[0]
+
+    # Agregado sintético (não persiste) para visão Todos
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        branch_id=branch_id,
+        year=year,
+        month=month,
+        competition_code="ALL",
+        bet_count=sum(r.bet_count for r in rows),
+        win_count=sum(r.win_count for r in rows),
+        loss_count=sum(r.loss_count for r in rows),
+        pending_count=sum(r.pending_count for r in rows),
+        total_pl=round(sum(r.total_pl for r in rows), 2),
+        total_stake=round(sum(r.total_stake for r in rows), 2),
+        commission_rate=rows[0].commission_rate,
+        closed_at=max((r.closed_at for r in rows if r.closed_at), default=None),
     )
 
 

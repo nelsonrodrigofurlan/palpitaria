@@ -19,16 +19,19 @@
       <div style="display: flex; align-items: center; gap: 0.5rem; background: white; padding: 0.5rem 1rem; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: var(--shadow);">
         <span style="font-size: 0.8rem; font-weight: 700; color: var(--muted); text-transform: uppercase;">Comp:</span>
         <select id="comp-filter" style="border: none; background: transparent; font-weight: 700; color: var(--blue); cursor: pointer; font-size: 0.95rem; outline: none;">
+          <option value="" {% if not current_comp %}selected{% endif %}>Todos</option>
           {% for comp in active_comps %}
             <option value="{{ comp.code }}" {% if current_comp == comp.code %}selected{% endif %}>{{ comp.name }}</option>
           {% endfor %}
         </select>
+        {% if current_comp %}
         <form action="/user/favorite-comp" method="POST" style="margin: 0; display: flex; align-items: center;">
           <input type="hidden" name="comp_code" value="{{ current_comp }}">
           <button type="submit" title="Definir como campeonato padrão" style="background: none; border: none; padding: 0; cursor: pointer; font-size: 1.1rem; filter: {% if user.favorite_comp_code == current_comp %}none{% else %}grayscale(1) opacity(0.4){% endif %}; transition: all 0.2s;" onmouseover="this.style.filter='none'; this.style.opacity='1'" onmouseout="{% if user.favorite_comp_code != current_comp %}this.style.filter='grayscale(1) opacity(0.4)'{% endif %}">
             📌
           </button>
         </form>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -38,7 +41,11 @@
   function applyIaFilters() {
     const mes = document.getElementById('mes-filter').value;
     const comp = document.getElementById('comp-filter').value;
-    window.location.href = '/ia-historico?comp=' + comp + '&mes=' + mes;
+    const params = new URLSearchParams();
+    if (comp) params.set('comp', comp);
+    if (mes) params.set('mes', mes);
+    const qs = params.toString();
+    window.location.href = '/ia-historico' + (qs ? '?' + qs : '');
   }
   function toggleIaPanel(el) {
     const panel = el.closest('.ia-panel');

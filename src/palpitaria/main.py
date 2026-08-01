@@ -222,54 +222,86 @@ def update_competition_odds(db: Session, comp_code: str):
             comp.odds_json = json.dumps(odds_list)
             db.commit()
 
+
+def _comp_scope(comp: str | None) -> str:
+    """Escopo do pipeline/sync: código único ou ALL (visão geral)."""
+    code = (comp or "").strip().upper()
+    return code if code and code != "ALL" else "ALL"
+
+
+def _home_redirect_for_scope(scope: str) -> str:
+    if not scope or scope == "ALL":
+        return "/"
+    return f"/?comp={scope}"
+
+
+def _codes_for_scope(db: Session, scope: str) -> list[str]:
+    from palpitaria.services.competitions import active_competition_codes, resolve_competition_codes
+
+    if scope == "ALL":
+        return active_competition_codes(db)
+    return resolve_competition_codes(db, competition_code=scope)
+
+
 def _render_home(request: Request, db: Session, user, comp_code: str | None = None) -> HTMLResponse:
     from palpitaria.models import FixtureReport, Competition
+    from palpitaria.services.competitions import active_competition_codes, resolve_competition_codes
+
     localize_existing_teams(db)
-    
-    # Buscar competições ativas
-    active_comps = db.query(Competition).filter_by(is_active=True).all()
-    
-    # Se não houver código, tenta o favorito do usuário, senão pega a primeira ativa ou default WC
-    if not comp_code:
-        if user and user.favorite_comp_code:
-            comp_code = user.favorite_comp_code
-        else:
-            comp_code = active_comps[0].code if active_comps else "WC"
-        
+
+    active_comps = db.query(Competition).filter_by(is_active=True).order_by(Competition.code).all()
+    # Default = Todos (visão geral). Filtro opcional via ?comp=
+    filter_code = (comp_code or "").strip().upper() or None
+    if filter_code == "ALL":
+        filter_code = None
+    codes = resolve_competition_codes(db, competition_code=filter_code)
+
     today = get_today_context()
-    analyses = analyze_upcoming(db, limit=50, for_today_only=True, competition_code=comp_code)
+    analyses = analyze_upcoming(db, limit=80, for_today_only=True, competition_code=filter_code)
     attach_saved_reports(db, analyses)
     candidates = [a for a in analyses if not a.excluded]
     discarded = [a for a in analyses if a.excluded]
-    profiles_ready, profiles_total = count_teams_with_profiles(db, comp_code)
-    today_count = count_today_fixtures(db, competition_code=comp_code)
-    upcoming_count = count_upcoming_fixtures(db, competition_code=comp_code)
+    profiles_ready, profiles_total = count_teams_with_profiles(db, competition_code=filter_code)
+    today_count = count_today_fixtures(db, competition_code=filter_code)
+    upcoming_count = count_upcoming_fixtures(db, competition_code=filter_code)
 
-    # Buscar última análise realizada para esta competição
-    last_report = db.query(FixtureReport).join(Fixture).filter(Fixture.competition_code == comp_code).order_by(FixtureReport.analyzed_at.desc()).first()
+    report_q = db.query(FixtureReport).join(Fixture)
+    if filter_code:
+        report_q = report_q.filter(Fixture.competition_code == filter_code)
+    elif codes:
+        report_q = report_q.filter(Fixture.competition_code.in_(codes))
+    last_report = report_q.order_by(FixtureReport.analyzed_at.desc()).first()
     last_analysis_at = last_report.analyzed_at if last_report else None
 
-    # Odds (Lê do cache salvo na competição)
-    odds_list = []
-    comp = db.query(Competition).filter_by(code=comp_code).first()
-    if comp and comp.odds_json:
+    # Odds: merge cache de todas as comps no escopo (badge/odds por jogo usa fixture.comp)
+    odds_list: list = []
+    odds_comps = [filter_code] if filter_code else (codes or active_competition_codes(db))
+    for code in odds_comps:
+        comp = db.query(Competition).filter_by(code=code).first()
+        if not comp or not comp.odds_json:
+            continue
         try:
-            odds_list = json.loads(comp.odds_json)
-        except:
-            odds_list = []
+            odds_list.extend(json.loads(comp.odds_json) or [])
+        except Exception:
+            pass
 
     from palpitaria.services.pipeline_trigger import pipeline_used_today
     from palpitaria.services.chat_service import _odds_for_match
     from palpitaria.services.strategy_card import enrich_strategy_card_display_mode
 
     for item in analyses:
+        item_comp = item.competition_code or filter_code or "BSA"
         enrich_strategy_card_display_mode(
             item,
-            _odds_for_match(db, item.home_name, item.away_name, comp_code),
+            _odds_for_match(db, item.home_name, item.away_name, item_comp),
         )
 
-    pipeline_used, pipeline_today_run = pipeline_used_today(db, comp_code)
-    pipeline_running_here = PIPELINE_STATE["running"] and PIPELINE_STATE.get("comp") == comp_code
+    gate_comp = filter_code or "ALL"
+    pipeline_used, pipeline_today_run = pipeline_used_today(db, gate_comp)
+    pipeline_running_here = PIPELINE_STATE["running"] and (
+        PIPELINE_STATE.get("comp") == gate_comp
+        or (gate_comp == "ALL" and PIPELINE_STATE.get("comp") == "ALL")
+    )
 
     return TEMPLATES.TemplateResponse(
         request,
@@ -289,12 +321,13 @@ def _render_home(request: Request, db: Session, user, comp_code: str | None = No
             "llm_model": settings.openai_chat_model,
             "last_analysis_at": last_analysis_at,
             "active_comps": active_comps,
-            "current_comp": comp_code,
+            "current_comp": filter_code or "",
             "betfair_odds": odds_list,
             "user": user,
             "pipeline_used_today": pipeline_used,
             "pipeline_running": pipeline_running_here,
             "pipeline_today_run": pipeline_today_run,
+            "pipeline_comp": gate_comp,
         },
     )
 
@@ -348,19 +381,25 @@ def sync_data(request: Request, comp: str | None = None, db: Session = Depends(g
     if not token:
         raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no Admin ou .env")
 
-    comp_code = comp or settings.world_cup_code
+    scope = _comp_scope(comp)
+    codes = _codes_for_scope(db, scope)
+    ingest_result = {"fixtures": 0, "teams": 0}
     try:
         LOG_BUFFER.clear()
-        add_log(f"[PASSO 1] Sincronizando jogos de {comp_code}...")
+        add_log(f"[PASSO 1] Sincronizando jogos — escopo {scope} ({', '.join(codes) or 'nenhum'})...")
         client = FootballDataClient(token=token)
-        ingest_result = ingest_competition(db, client, competition_code=comp_code, log_callback=add_log)
+        for code in codes:
+            add_log(f"  → {code}")
+            part = ingest_competition(db, client, competition_code=code, log_callback=add_log)
+            ingest_result["fixtures"] += int(part.get("fixtures") or 0)
+            ingest_result["teams"] += int(part.get("teams") or 0)
+            resolved = resolve_pending_recommendations(db, code)
+            if resolved:
+                add_log(f"IA ({code}): {resolved} recomendação(ões) conferidas.")
         renamed = localize_existing_teams(db)
         if renamed:
             add_log(f"Nomes padronizados PT-BR: {renamed} seleções")
         add_log(f"Concluído: {ingest_result.get('fixtures', 0)} jogos, {ingest_result.get('teams', 0)} seleções.")
-        resolved = resolve_pending_recommendations(db, comp_code)
-        if resolved:
-            add_log(f"IA: {resolved} recomendação(ões) conferidas com placar final.")
     except FootballDataError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
@@ -371,7 +410,7 @@ def sync_data(request: Request, comp: str | None = None, db: Session = Depends(g
         return HTMLResponse(
             "",
             status_code=200,
-            headers={"HX-Redirect": f"/?comp={comp_code}"},
+            headers={"HX-Redirect": _home_redirect_for_scope(scope)},
         )
 
     return TEMPLATES.TemplateResponse(
@@ -380,7 +419,7 @@ def sync_data(request: Request, comp: str | None = None, db: Session = Depends(g
         {
             "ingest": ingest_result,
             "profiles": None,
-            "message": f"Jogos de {comp_code} sincronizados. No dia do jogo, clique em Atualizar Perfis.",
+            "message": f"Jogos sincronizados ({scope}). No dia do jogo, clique em Atualizar Tudo.",
             "redirect": True,
         },
     )
@@ -393,21 +432,24 @@ def sync_profiles(request: Request, comp: str | None = None, db: Session = Depen
     if not token:
         raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no Admin ou .env")
 
-    comp_code = comp or settings.world_cup_code
+    scope = _comp_scope(comp)
+    codes = _codes_for_scope(db, scope)
+    profiles = 0
     try:
         LOG_BUFFER.clear()
-        add_log(f"[PASSO 2] Atualizando perfis API — seleções de hoje ({comp_code})...")
+        add_log(f"[PASSO 2] Atualizando perfis API — hoje ({scope})...")
         client = FootballDataClient(token=token)
-        profiles = build_team_profiles(
-            db,
-            client,
-            log_callback=add_log,
-            competition_code=comp_code,
-            today_only=True,
-        )
-        ready, total = count_teams_with_profiles(db, comp_code)
+        for code in codes:
+            profiles += build_team_profiles(
+                db,
+                client,
+                log_callback=add_log,
+                competition_code=code,
+                today_only=True,
+            )
+        ready, total = count_teams_with_profiles(db, competition_code=None if scope == "ALL" else scope)
         today_ctx = get_today_context()
-        add_log(f"Concluído: {profiles} perfil(is) hoje. {comp_code}: {ready}/{total}.")
+        add_log(f"Concluído: {profiles} perfil(is) hoje. Escopo {scope}: {ready}/{total}.")
     except FootballDataError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
@@ -418,7 +460,7 @@ def sync_profiles(request: Request, comp: str | None = None, db: Session = Depen
         return HTMLResponse(
             "",
             status_code=200,
-            headers={"HX-Redirect": f"/?comp={comp_code}"},
+            headers={"HX-Redirect": _home_redirect_for_scope(scope)},
         )
 
     return TEMPLATES.TemplateResponse(
@@ -428,9 +470,8 @@ def sync_profiles(request: Request, comp: str | None = None, db: Session = Depen
             "ingest": None,
             "profiles": profiles,
             "message": (
-                f"Perfis API: {profiles} seleção(ões) de {comp_code} hoje ({today_ctx.label}). "
-                f"Total prontas no banco: {ready}/{total}. "
-                f"Estreias sem jogo na API → passo 3 (perfil web)."
+                f"Perfis API: {profiles} seleção(ões) hoje ({today_ctx.label}). "
+                f"Escopo {scope}: {ready}/{total}."
             ),
             "redirect": True,
         },
@@ -440,16 +481,17 @@ def sync_profiles(request: Request, comp: str | None = None, db: Session = Depen
 @app.post("/analyze")
 def run_analysis(request: Request, comp: str | None = None, db: Session = Depends(get_db), user=Depends(admin_required)):
     LOG_BUFFER.clear()
-    comp_code = comp or settings.world_cup_code
-    _execute_analysis_pipeline(db, comp_code)
-    
+    scope = _comp_scope(comp)
+    for code in _codes_for_scope(db, scope):
+        _execute_analysis_pipeline(db, code)
+
     if request.headers.get("HX-Request"):
         return HTMLResponse(
             "",
             status_code=200,
-            headers={"HX-Redirect": f"/?comp={comp_code}"},
+            headers={"HX-Redirect": _home_redirect_for_scope(scope)},
         )
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url=_home_redirect_for_scope(scope), status_code=303)
 
 
 def _execute_analysis_pipeline(db: Session, comp_code: str):
@@ -561,7 +603,7 @@ def run_full_pipeline(request: Request, comp: str | None = None, db: Session = D
     from palpitaria.services.config_service import get_api_config
     from palpitaria.services.pipeline_trigger import claim_daily_pipeline_run, finalize_pipeline_run
 
-    comp_code = comp or settings.world_cup_code
+    scope = _comp_scope(comp)
     if PIPELINE_STATE["running"]:
         msg = "Já há uma atualização em andamento. Aguarde terminar."
         if request.headers.get("HX-Request"):
@@ -569,7 +611,7 @@ def run_full_pipeline(request: Request, comp: str | None = None, db: Session = D
         raise HTTPException(status_code=409, detail=msg)
 
     try:
-        run, _ = claim_daily_pipeline_run(db, comp_code, trigger="web_admin")
+        run, _ = claim_daily_pipeline_run(db, scope, trigger="web_admin")
     except HTTPException as exc:
         if request.headers.get("HX-Request"):
             return HTMLResponse(f'<div class="alert">🔒 {exc.detail}</div>', status_code=exc.status_code)
@@ -581,7 +623,7 @@ def run_full_pipeline(request: Request, comp: str | None = None, db: Session = D
         raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no Admin ou .env")
 
     try:
-        _start_pipeline(comp_code, db, football_token, run_id=run.id)
+        _start_pipeline(scope, db, football_token, run_id=run.id)
     except HTTPException:
         finalize_pipeline_run(db, run.id, error="Falha ao iniciar pipeline")
         raise
@@ -591,7 +633,7 @@ def run_full_pipeline(request: Request, comp: str | None = None, db: Session = D
 
     if request.headers.get("HX-Request"):
         return HTMLResponse("", status_code=202)
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url=_home_redirect_for_scope(scope), status_code=303)
 
 
 def _start_pipeline(comp_code: str, db: Session, football_token: str | None, *, run_id: int | None = None) -> str:
@@ -624,7 +666,9 @@ def _run_full_pipeline_work(comp_code: str, run_id: int | None = None) -> None:
     _ACTIVE_DB_RUN_ID = run_id
     db = SessionLocal()
     pipeline_error: str | None = None
-    add_log(f"🚀 INICIANDO PIPELINE COMPLETO ({comp_code})")
+    scope = _comp_scope(comp_code)
+    codes = _codes_for_scope(db, scope)
+    add_log(f"🚀 INICIANDO PIPELINE COMPLETO ({scope}) — {', '.join(codes) or 'nenhum ativo'}")
 
     try:
         if _pipeline_aborted():
@@ -634,41 +678,43 @@ def _run_full_pipeline_work(comp_code: str, run_id: int | None = None) -> None:
         if not token:
             raise RuntimeError("Configure FOOTBALL_DATA_TOKEN no Admin ou .env")
 
-        add_log("\n[PASSO 1/3] Sincronizando jogos e resultados...")
-        client = FootballDataClient(token=token)
-        ingest_result = ingest_competition(db, client, competition_code=comp_code, log_callback=add_log)
-        if _pipeline_aborted():
-            raise RuntimeError("Pipeline abortado")
-        localize_existing_teams(db)
-        resolve_pending_recommendations(db, comp_code)
-        add_log(f"✓ Jogos sincronizados: {ingest_result.get('fixtures', 0)} novos/atualizados.")
+        if not codes:
+            add_log("AVISO: nenhuma competição ativa para processar.")
+        else:
+            client = FootballDataClient(token=token)
+            for idx, code in enumerate(codes, start=1):
+                if _pipeline_aborted():
+                    raise RuntimeError("Pipeline abortado")
+                add_log(f"\n===== {code} ({idx}/{len(codes)}) =====")
 
-        if _pipeline_aborted():
-            raise RuntimeError("Pipeline abortado")
+                add_log(f"[PASSO 1/3] Sincronizando jogos ({code})...")
+                ingest_result = ingest_competition(db, client, competition_code=code, log_callback=add_log)
+                localize_existing_teams(db)
+                resolve_pending_recommendations(db, code)
+                add_log(f"✓ {code}: {ingest_result.get('fixtures', 0)} jogos sync.")
 
-        add_log("\n[PASSO 2/3] Atualizando perfis técnicos (API)...")
-        profiles = build_team_profiles(
-            db,
-            client,
-            log_callback=add_log,
-            competition_code=comp_code,
-            today_only=True,
-        )
-        if _pipeline_aborted():
-            raise RuntimeError("Pipeline abortado")
-        ready, total = count_teams_with_profiles(db, comp_code)
-        add_log(f"✓ Perfis API atualizados: {profiles} hoje. {comp_code}: {ready}/{total}.")
+                if _pipeline_aborted():
+                    raise RuntimeError("Pipeline abortado")
 
-        if _pipeline_aborted():
-            raise RuntimeError("Pipeline abortado")
+                add_log(f"[PASSO 2/3] Perfis API ({code})...")
+                profiles = build_team_profiles(
+                    db,
+                    client,
+                    log_callback=add_log,
+                    competition_code=code,
+                    today_only=True,
+                )
+                ready, total = count_teams_with_profiles(db, code)
+                add_log(f"✓ {code}: {profiles} perfis hoje · {ready}/{total} prontos.")
 
-        add_log("\n[PASSO 3/3] Gerando leituras IA (Web + Scrap + LLM)...")
-        _execute_analysis_pipeline(db, comp_code)
-        if _pipeline_aborted():
-            raise RuntimeError("Pipeline abortado")
+                if _pipeline_aborted():
+                    raise RuntimeError("Pipeline abortado")
 
-        add_log("\n[PASSO 4] Atualizando odds da Betfair...")
-        update_competition_odds(db, comp_code)
+                add_log(f"[PASSO 3/3] Leituras IA ({code})...")
+                _execute_analysis_pipeline(db, code)
+
+                add_log(f"[PASSO 4] Odds ({code})...")
+                update_competition_odds(db, code)
 
         add_log("\n✓ PIPELINE CONCLUÍDO COM SUCESSO!")
     except Exception as exc:
@@ -711,7 +757,7 @@ def api_trigger_pipeline(
     if not football_token:
         raise HTTPException(status_code=400, detail="Configure FOOTBALL_DATA_TOKEN no Admin ou .env")
 
-    comp_code = comp or settings.world_cup_code
+    comp_code = _comp_scope(comp)
     run, watch_token = claim_remote_daily_run(db, comp_code)
     try:
         _start_pipeline(comp_code, db, football_token, run_id=run.id)
@@ -814,12 +860,11 @@ def list_branches(
     period_str = period_label(view_y, view_m)
     period_choices = branch_period_choices()
 
-    # Buscar competições ativas
-    active_comps = db.query(Competition).filter_by(is_active=True).all()
-    if not comp:
-        comp_code = user.favorite_comp_code or (active_comps[0].code if active_comps else "WC")
-    else:
-        comp_code = comp
+    # Buscar competições ativas — default Todos (sem filtro)
+    active_comps = db.query(Competition).filter_by(is_active=True).order_by(Competition.code).all()
+    comp_code = (comp or "").strip().upper() or None
+    if comp_code == "ALL":
+        comp_code = None
 
     def _branches_for_user() -> list:
         return (
@@ -897,7 +942,7 @@ def list_branches(
             "is_current_period": (view_y, view_m) == (cy, cm),
             "app_timezone": settings.app_timezone,
             "active_comps": active_comps,
-            "current_comp": comp_code,
+            "current_comp": comp_code or "",
             "user": user,
         }
     )
@@ -1118,8 +1163,11 @@ def list_ia_historico(
 ):
     from palpitaria.models import AiRecommendation, Competition
 
-    active_comps = db.query(Competition).filter_by(is_active=True).all()
-    comp_code = comp or user.favorite_comp_code or (active_comps[0].code if active_comps else "WC")
+    active_comps = db.query(Competition).filter_by(is_active=True).order_by(Competition.code).all()
+    # Default Todos (como /graficos)
+    comp_code = (comp or "").strip().upper() or None
+    if comp_code == "ALL":
+        comp_code = None
 
     resolve_pending_recommendations(db, comp_code)
     prune_discarded_pending_recommendations(db, comp_code)
@@ -1137,13 +1185,10 @@ def list_ia_historico(
     filtered = filter_recommendations_by_month(all_recommendations, year, month)
     ensure_ia_history_from_reports(db, comp_code, year, month)
     # Recarregar após possível backfill
-    all_recommendations = (
-        db.query(AiRecommendation)
-        .filter(AiRecommendation.competition_code == comp_code)
-        .order_by(AiRecommendation.analyzed_at.desc())
-        .limit(500)
-        .all()
-    )
+    reload_q = db.query(AiRecommendation).order_by(AiRecommendation.analyzed_at.desc())
+    if comp_code:
+        reload_q = reload_q.filter(AiRecommendation.competition_code == comp_code)
+    all_recommendations = reload_q.limit(500).all()
     filtered = filter_recommendations_by_month(all_recommendations, year, month)
     split = compute_split_stats(filtered)
 
@@ -1164,7 +1209,7 @@ def list_ia_historico(
             "current_period": period_label(cy, cm),
             "app_timezone": settings.app_timezone,
             "active_comps": active_comps,
-            "current_comp": comp_code,
+            "current_comp": comp_code or "",
             "user": user,
         },
     )
@@ -1276,7 +1321,9 @@ async def add_bet(request: Request, db: Session = Depends(get_db), user=Depends(
     
     form = await request.form()
     branch_id = int(form.get("branch_id"))
-    comp_code = form.get("competition_code")
+    comp_code = str(form.get("competition_code") or "").strip().upper()
+    if not comp_code:
+        raise HTTPException(status_code=400, detail="Selecione o campeonato da entrada")
     
     # Verificar se a filial pertence ao usuário
     branch = db.query(Branch).filter(Branch.id == branch_id, Branch.user_id == user.id).first()
@@ -1304,7 +1351,7 @@ async def add_bet(request: Request, db: Session = Depends(get_db), user=Depends(
         stake=actual_stake,  # Salvamos a stake real (o que se ganha)
         outcome=outcome,
         profit_loss=pl,
-        competition_code=comp_code or settings.world_cup_code,
+        competition_code=comp_code,
         created_at=bet_created_at_for_period(bet_year, bet_month),
     )
     db.add(bet)

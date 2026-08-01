@@ -13,9 +13,22 @@ from palpitaria.agents.validator import validate_agent
 
 
 def _parse_comps(raw: str | None) -> list[str]:
-    if not raw:
-        return ["BSA", "BSB"]
-    return [p.strip().upper() for p in raw.split(",") if p.strip()]
+    if raw:
+        return [p.strip().upper() for p in raw.split(",") if p.strip()]
+    try:
+        from palpitaria.database import SessionLocal
+        from palpitaria.services.competitions import active_competition_codes
+
+        db = SessionLocal()
+        try:
+            codes = active_competition_codes(db)
+        finally:
+            db.close()
+        if codes:
+            return codes
+    except Exception:
+        pass
+    return ["BSA", "BSB"]
 
 
 def _resolve_agent(path: str | None) -> Path:
@@ -99,7 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_run = sub.add_parser("rodar", help="ciclo diario com planejador LLM (ou fixed)")
     p_run.add_argument("--agente", default=None)
-    p_run.add_argument("--comps", default="BSA,BSB")
+    p_run.add_argument("--comps", default="", help="ex: BSA,CDB — vazio = todos ativos no banco")
     p_run.add_argument("--modo", default=None, choices=["task_based", "autonomous", "interactive", "goal_oriented"])
     p_run.add_argument(
         "--planejador",
@@ -118,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_draft = sub.add_parser("rascunho", help="analisa + rascunho sem sync")
     p_draft.add_argument("--agente", default=None)
-    p_draft.add_argument("--comps", default="BSA,BSB")
+    p_draft.add_argument("--comps", default="", help="ex: BSA,CDB — vazio = todos ativos no banco")
     p_draft.add_argument("--modo", default=None)
     p_draft.add_argument("--planejador", default="llm", choices=["llm", "fixed"])
     p_draft.add_argument("--sem-narrar", action="store_true")

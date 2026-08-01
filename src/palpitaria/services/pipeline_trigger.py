@@ -53,9 +53,32 @@ def verify_trigger_request(request: Request) -> None:
 
 
 def pipeline_used_today(db: Session, comp_code: str) -> tuple[bool, PipelineRun | None]:
-    """Indica se o pipeline completo já rodou hoje para este campeonato."""
+    """Indica se o pipeline completo já rodou hoje (ALL cobre todos os ativos)."""
     run_day = today_run_day()
-    comp = comp_code or settings.world_cup_code
+    comp = (comp_code or "ALL").upper()
+
+    # Visão geral do dia: se ALL rodou, qualquer filtro também está coberto
+    all_lock = (
+        db.query(RemotePipelineDaily)
+        .filter_by(run_day=run_day, comp_code="ALL")
+        .one_or_none()
+    )
+    if all_lock is not None:
+        run = db.query(PipelineRun).filter(PipelineRun.id == all_lock.pipeline_run_id).one_or_none()
+        return True, run
+
+    all_run = (
+        db.query(PipelineRun)
+        .filter(PipelineRun.run_day == run_day, PipelineRun.comp_code == "ALL")
+        .order_by(PipelineRun.started_at.desc())
+        .first()
+    )
+    if all_run is not None:
+        return True, all_run
+
+    if comp == "ALL":
+        return False, None
+
     lock = (
         db.query(RemotePipelineDaily)
         .filter_by(run_day=run_day, comp_code=comp)
@@ -92,7 +115,7 @@ def pipeline_used_today(db: Session, comp_code: str) -> tuple[bool, PipelineRun 
 
 _DAILY_LIMIT_MSG = (
     "Atualização completa já executada hoje para {comp} ({run_day}). "
-    "Só é permitido 1 vez por dia por campeonato."
+    "Só é permitido 1 vez por dia (visão Todos cobre todos os ativos)."
 )
 
 
@@ -102,9 +125,9 @@ def claim_daily_pipeline_run(
     *,
     trigger: str,
 ) -> tuple[PipelineRun, str | None]:
-    """Reserva slot diário por campeonato (web ou remoto). Falha com 429 se já usado hoje."""
+    """Reserva slot diário (ALL ou um campeonato). Falha com 429 se já usado hoje."""
     run_day = today_run_day()
-    comp = comp_code or settings.world_cup_code
+    comp = (comp_code or "ALL").upper()
     used, _ = pipeline_used_today(db, comp)
     if used:
         raise HTTPException(

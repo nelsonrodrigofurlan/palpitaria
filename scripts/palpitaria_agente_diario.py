@@ -25,7 +25,7 @@ def _configure_stdio() -> None:
 
 def load_config() -> dict:
     defaults = {
-        "comps": "BSA,BSB",
+        "comps": "",
         "planejador": "llm",
         "sem_narrar": False,
         "skip_sync": False,

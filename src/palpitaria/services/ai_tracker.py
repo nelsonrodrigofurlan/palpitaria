@@ -313,7 +313,7 @@ def compute_split_stats(recommendations: list[AiRecommendation]) -> dict:
 
 def ensure_ia_history_from_reports(
     db: Session,
-    comp_code: str,
+    comp_code: str | None,
     year: int,
     month: int,
 ) -> int:
@@ -321,13 +321,14 @@ def ensure_ia_history_from_reports(
 
     Só adiciona jogos finalizados — pendentes seguem a lógica live (podem ser descartados).
     """
-    reports = (
+    reports_q = (
         db.query(FixtureReport)
         .join(Fixture, FixtureReport.fixture_id == Fixture.id)
-        .filter(Fixture.competition_code == comp_code)
         .filter(FixtureReport.best_pick_json.isnot(None))
-        .all()
     )
+    if comp_code:
+        reports_q = reports_q.filter(Fixture.competition_code == comp_code)
+    reports = reports_q.all()
     touched = 0
     for report in reports:
         if not report.analyzed_at:
@@ -398,18 +399,19 @@ def ensure_ia_history_from_reports(
     return touched
 
 
-def prune_discarded_pending_recommendations(db: Session, comp_code: str) -> int:
+def prune_discarded_pending_recommendations(db: Session, comp_code: str | None = None) -> int:
     """Remove recomendações pendentes de jogos ainda não finalizados que a lógica atual descartaria."""
     from palpitaria.services.analyzer import analyze_fixture
 
-    pending = (
+    pending_q = (
         db.query(AiRecommendation)
         .join(Fixture, AiRecommendation.fixture_id == Fixture.id)
-        .filter(AiRecommendation.competition_code == comp_code)
         .filter(AiRecommendation.outcome == "PENDING")
         .filter(Fixture.status != "FINISHED")
-        .all()
     )
+    if comp_code:
+        pending_q = pending_q.filter(AiRecommendation.competition_code == comp_code)
+    pending = pending_q.all()
     removed = 0
     for rec in pending:
         fixture = rec.fixture or db.get(Fixture, rec.fixture_id)

@@ -9,17 +9,20 @@
     </div>
     <div style="display: flex; align-items: center; gap: 0.75rem; background: white; padding: 0.5rem 1rem; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: var(--shadow);">
       <span style="font-size: 0.85rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Campeonato:</span>
-      <select name="comp" onchange="window.location.href='/?comp=' + this.value" style="border: none; background: transparent; font-weight: 700; color: var(--blue); cursor: pointer; font-size: 1rem; outline: none;">
+      <select name="comp" onchange="window.location.href=this.value ? ('/?comp=' + this.value) : '/'" style="border: none; background: transparent; font-weight: 700; color: var(--blue); cursor: pointer; font-size: 1rem; outline: none;">
+        <option value="" {% if not current_comp %}selected{% endif %}>Todos</option>
         {% for comp in active_comps %}
           <option value="{{ comp.code }}" {% if current_comp == comp.code %}selected{% endif %}>{{ comp.name }}</option>
         {% endfor %}
       </select>
+      {% if current_comp %}
       <form action="/user/favorite-comp" method="POST" style="margin: 0; display: flex; align-items: center;">
         <input type="hidden" name="comp_code" value="{{ current_comp }}">
         <button type="submit" title="Definir como campeonato padrão" style="background: none; border: none; padding: 0; cursor: pointer; font-size: 1.1rem; filter: {% if user.favorite_comp_code == current_comp %}none{% else %}grayscale(1) opacity(0.4){% endif %}; transition: all 0.2s;" onmouseover="this.style.filter='none'; this.style.opacity='1'" onmouseout="{% if user.favorite_comp_code != current_comp %}this.style.filter='grayscale(1) opacity(0.4)'{% endif %}">
           📌
         </button>
       </form>
+      {% endif %}
     </div>
   </div>
 </header>
@@ -30,8 +33,8 @@
 </div>
 {% elif profiles_ready < profiles_total %}
 <div class="alert">
-  ⚠️ <strong>Perfis incompletos neste campeonato:</strong> {{ profiles_ready }}/{{ profiles_total }} times prontos.
-  Rode o passo <strong>2. Atualizar Perfis</strong> no dia do jogo. Estreias → passo 3.
+  ⚠️ <strong>Perfis incompletos{% if current_comp %} neste campeonato{% else %} nos campeonatos ativos{% endif %}:</strong> {{ profiles_ready }}/{{ profiles_total }} times prontos.
+  Rode <strong>Atualizar Tudo</strong> no dia do jogo.
 </div>
 {% endif %}
 
@@ -42,8 +45,8 @@
       ⏳ Atualização em andamento…
     </button>
     {% elif pipeline_used_today %}
-    <button type="button" disabled title="1 atualização por dia por campeonato" style="background: #e2e8f0; color: #64748b; font-weight: 700; padding: 0.75rem 2rem; border-radius: 12px; border: none; cursor: not-allowed; display: flex; align-items: center; gap: 0.5rem;">
-      🔒 {{ current_comp }} atualizado hoje
+    <button type="button" disabled title="1 atualização completa por dia" style="background: #e2e8f0; color: #64748b; font-weight: 700; padding: 0.75rem 2rem; border-radius: 12px; border: none; cursor: not-allowed; display: flex; align-items: center; gap: 0.5rem;">
+      🔒 {% if current_comp %}{{ current_comp }}{% else %}Todos{% endif %} atualizado hoje
     </button>
     {% if pipeline_today_run and pipeline_today_run.completed_at %}
     <span style="font-size: 0.8rem; color: var(--muted); align-self: center;">
@@ -52,9 +55,9 @@
     </span>
     {% endif %}
     {% else %}
-    <form hx-post="/pipeline?comp={{ current_comp }}" data-pipeline="/pipeline" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="900000">
+    <form hx-post="/pipeline{% if current_comp %}?comp={{ current_comp }}{% endif %}" data-pipeline="/pipeline" hx-target="#sync-result" hx-swap="innerHTML" hx-timeout="900000">
       <button type="submit" style="background: var(--blue); color: white; font-weight: 700; padding: 0.75rem 2rem; border-radius: 12px; border: none; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; box-shadow: var(--shadow);" data-loading="pipeline">
-        🚀 Atualizar Tudo (Sincronizar + Perfis + Leituras)
+        🚀 Atualizar Tudo{% if not current_comp %} (todos ativos){% endif %}
       </button>
     </form>
     {% endif %}
@@ -89,10 +92,11 @@
     <div class="card collapsed">
       <div class="card-header" onclick="toggleCard(this)">
         <div style="display: flex; flex-direction: column; gap: 0.25rem;">
-          <div class="match-title" style="display: flex; align-items: center; gap: 0.75rem;">
+          <div class="match-title" style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
             {% if a.home_crest %}<img src="{{ a.home_crest }}" alt="" class="team-crest">{% endif %}
             {{ a.home_name }} x {{ a.away_name }}
             {% if a.away_crest %}<img src="{{ a.away_crest }}" alt="" class="team-crest">{% endif %}
+            {% if a.competition_code %}<span class="badge" style="font-size: 0.65rem; background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe;">{{ a.competition_code }}</span>{% endif %}
           </div>
           <div class="meta" style="margin: 0;">
             ⏰ {{ a.utc_date | kickoff(app_timezone) }} ({{ app_timezone }})
@@ -243,16 +247,17 @@
 <section>
   <h2>🚫 Fugir do Zero — hoje ({{ discarded|length }})</h2>
   <p class="sub" style="margin: -0.5rem 0 1rem; font-size: 0.85rem; color: var(--muted);">
-    Mercados Over descartados pelo filtro anti-0–0 — cada jogo ainda pode ter palpite alternativo (vitória ou lay correct score).
+    Mercados Over descartados pelo filtro anti-0–0 — cada jogo ainda pode ter palpite alternativo validado (vitória / handicap).
   </p>
   {% for a in discarded %}
   <div class="card collapsed" style="opacity: 0.8;">
     <div class="card-header" onclick="toggleCard(this)">
       <div style="display: flex; flex-direction: column; gap: 0.25rem;">
-        <div class="match-title" style="color: var(--muted); display: flex; align-items: center; gap: 0.75rem;">
+        <div class="match-title" style="color: var(--muted); display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
           {% if a.home_crest %}<img src="{{ a.home_crest }}" alt="" class="team-crest">{% endif %}
           {{ a.home_name }} x {{ a.away_name }}
           {% if a.away_crest %}<img src="{{ a.away_crest }}" alt="" class="team-crest">{% endif %}
+          {% if a.competition_code %}<span class="badge" style="font-size: 0.65rem; background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe;">{{ a.competition_code }}</span>{% endif %}
         </div>
         <div class="meta" style="margin: 0;">
           ⏰ {{ a.utc_date | kickoff(app_timezone) }} ({{ app_timezone }})
@@ -575,7 +580,7 @@
         <div class="summary-item" style="border-left: 4px solid #22c55e;">
           <div class="summary-item-layout">
             <div class="summary-item-copy">
-              <div class="summary-item-title">{{ a.home_name }} x {{ a.away_name }}</div>
+              <div class="summary-item-title">{{ a.home_name }} x {{ a.away_name }}{% if a.competition_code %} · {{ a.competition_code }}{% endif %}</div>
               <div class="summary-item-market">{{ a.best_pick.market }}</div>
               <div class="summary-item-meta">
                 🎯 Confiança: {{ a.goal_potential_score }}% | ⏰ {{ a.utc_date | kickoff(app_timezone) }}
@@ -611,7 +616,7 @@
         <div class="summary-item" style="border-left: 4px solid #eab308;">
           <div class="summary-item-layout">
             <div class="summary-item-copy">
-              <div class="summary-item-title">{{ a.home_name }} x {{ a.away_name }}</div>
+              <div class="summary-item-title">{{ a.home_name }} x {{ a.away_name }}{% if a.competition_code %} · {{ a.competition_code }}{% endif %}</div>
               <div class="summary-item-market">{{ a.best_pick.market }}</div>
               <div class="summary-item-meta">
                 ℹ️ Alternativo | ⏰ {{ a.utc_date | kickoff(app_timezone) }}
