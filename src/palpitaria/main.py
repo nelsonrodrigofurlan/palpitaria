@@ -949,7 +949,13 @@ def list_branches(
 
 
 @app.get("/historico", response_class=HTMLResponse)
-def list_historico(request: Request, db: Session = Depends(get_db), user=Depends(login_required)):
+def list_historico(
+    request: Request,
+    year: int | None = None,
+    month: int | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(login_required),
+):
     from palpitaria.models import BranchMonthlySummary, Branch, Bet
     from collections import defaultdict
 
@@ -988,7 +994,7 @@ def list_historico(request: Request, db: Session = Depends(get_db), user=Depends
         by_period[(y, m, bet.branch_id)].append(bet)
         live_period_keys.add((y, m, bet.branch_id))
 
-    for (year, month, branch_id), bets in by_period.items():
+    for (y, m, branch_id), bets in by_period.items():
         branch = branch_by_id.get(branch_id)
         if not branch:
             continue
@@ -1002,9 +1008,9 @@ def list_historico(request: Request, db: Session = Depends(get_db), user=Depends
             total_stake = round(sum(bet.stake for bet in bets), 2)
         comp_codes = {bet.competition_code or "WC" for bet in bets}
         rows.append({
-            "period": period_label(year, month),
-            "year": year,
-            "month": month,
+            "period": period_label(y, m),
+            "year": y,
+            "month": m,
             "branch_name": branch.name,
             "bet_count": len(bets),
             "win_count": wins,
@@ -1015,7 +1021,7 @@ def list_historico(request: Request, db: Session = Depends(get_db), user=Depends
             "hit_rate_pct": hit_rate_pct(wins, len(bets)),
             "closed_at": None,
             "competition_code": ", ".join(sorted(comp_codes)),
-            "is_active": (year, month) == (cy, cm),
+            "is_active": (y, m) == (cy, cm),
             "side": branch.side,
         })
 
@@ -1072,19 +1078,43 @@ def list_historico(request: Request, db: Session = Depends(get_db), user=Depends
         )
     )
 
+    # Filtro por mês (opcional). Sem params → todos os meses.
+    filter_y = year
+    filter_m = month
+    period_keys = sorted(
+        {(r["year"], r["month"]) for r in rows if r.get("year") and r.get("month")},
+        reverse=True,
+    )
+    if (cy, cm) not in period_keys:
+        period_keys.insert(0, (cy, cm))
+    period_choices = [
+        {"year": y, "month": m, "label": period_label(y, m)} for y, m in period_keys
+    ]
+
+    filtered_rows = rows
+    if filter_y and filter_m:
+        filtered_rows = [r for r in rows if r.get("year") == filter_y and r.get("month") == filter_m]
+
     current_month_pl = sum(r["total_pl"] for r in rows if r.get("is_active"))
     total_history_pl = sum(r["total_pl"] for r in rows)
+    filtered_pl = sum(r["total_pl"] for r in filtered_rows)
 
     return TEMPLATES.TemplateResponse(
         request,
         "historico.html",
         {
-            "rows": rows,
+            "rows": filtered_rows,
             "current_period": period_label(cy, cm),
             "app_timezone": settings.app_timezone,
             "user": user,
             "current_month_pl": current_month_pl,
             "total_history_pl": total_history_pl,
+            "filtered_pl": filtered_pl,
+            "period_choices": period_choices,
+            "selected_year": filter_y,
+            "selected_month": filter_m,
+            "filter_active": bool(filter_y and filter_m),
+            "selected_period": period_label(filter_y, filter_m) if filter_y and filter_m else None,
         }
     )
 

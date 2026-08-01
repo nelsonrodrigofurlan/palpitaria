@@ -1,4 +1,4 @@
-"""Import Betfair BettingPandL.csv (market-level) into filiais — July apontamento."""
+"""Import Betfair BettingPandL.csv (market-level) into filiais."""
 from __future__ import annotations
 
 import argparse
@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from palpitaria.config import settings
 from palpitaria.database import SessionLocal
 from palpitaria.models import Bet, Branch, BranchMonthlySummary, User
-from palpitaria.services.ledger import bet_in_period, bet_local_period
+from palpitaria.services.ledger import bet_in_period
 
 USER_EMAIL = "nelson.r.furlan@gmail.com"
 COMP_CODE = "WC"
@@ -40,7 +40,6 @@ def parse_money(raw: str) -> float:
 
 
 def parse_bf_dt(raw: str) -> datetime:
-    # 30-Jul-26 23:32
     parts = raw.strip().split()
     date_part = parts[0]
     time_part = parts[1] if len(parts) > 1 else "12:00"
@@ -97,12 +96,10 @@ def resolve_branch(key: str, by_slug: dict[str, Branch], user_id: int) -> Branch
         return by_slug.get(f"handicap_ah_{user_id}") or by_slug.get("handicap_ah_1")
     if key == "shots":
         return by_slug.get("chutes_em_gol_1")
-    # BTTS / misc → trader back
     return by_slug.get(f"trader_back_{user_id}") or by_slug.get("trader_back_1")
 
 
 def match_label(market: str) -> str:
-    # Football / Home v Away : Selection
     body = market
     if body.startswith("Football / "):
         body = body[len("Football / ") :]
@@ -120,7 +117,7 @@ def pandl_id(market: str, settled: str, pl: float) -> str:
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
 
 
-def load_july(path: Path, year: int, month: int) -> list[dict]:
+def load_month(path: Path, year: int, month: int) -> list[dict]:
     rows: list[dict] = []
     with path.open(encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
@@ -143,17 +140,6 @@ def load_july(path: Path, year: int, month: int) -> list[dict]:
                 }
             )
     return rows
-
-
-def existing_pandl_ids(db, user_id: int) -> set[str]:
-    ids: set[str] = set()
-    bets = db.query(Bet).join(Branch).filter(Branch.user_id == user_id).all()
-    for bet in bets:
-        if PANDL_TAG in bet.description:
-            m = re.search(r"\[PandL:([^\]]+)\]", bet.description)
-            if m:
-                ids.add(m.group(1))
-    return ids
 
 
 def sync_month_summaries(db, user_id: int, year: int, month: int, comp_code: str) -> int:
@@ -214,93 +200,68 @@ def sync_month_summaries(db, user_id: int, year: int, month: int, comp_code: str
     return updated
 
 
-def clear_july_non_pandl(db, user_id: int, year: int, month: int) -> int:
-    """Remove lançamentos de julho que NÃO vieram deste PandL (evita duplicar parcial)."""
+def clear_month_bets(db, user_id: int, year: int, month: int) -> int:
+    """Remove TODAS as apostas do mês (refaz apontamento do zero)."""
     bets = db.query(Bet).join(Branch).filter(Branch.user_id == user_id).all()
     removed = 0
     for bet in bets:
-        if not bet_in_period(bet, year, month):
-            continue
-        if PANDL_TAG in (bet.description or ""):
-            continue
-        db.delete(bet)
-        removed += 1
+        if bet_in_period(bet, year, month):
+            db.delete(bet)
+            removed += 1
     return removed
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("csv", nargs="?", default=r"c:\Users\Usuário\Downloads\BettingPandL.csv")
-    parser.add_argument("--year", type=int, default=2026)
-    parser.add_argument("--month", type=int, default=7)
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument(
-        "--replace-july",
-        action="store_true",
-        help="Remove apostas de julho que não são PandL antes de importar",
-    )
-    args = parser.parse_args()
-    path = Path(args.csv)
-    if not path.is_file():
-        raise SystemExit(f"CSV not found: {path}")
-
-    rows = load_july(path, args.year, args.month)
-    db = SessionLocal()
-    user = db.query(User).filter(User.email == USER_EMAIL).first()
-    if not user:
-        raise SystemExit(f"User not found: {USER_EMAIL}")
-
+def import_month(
+    db,
+    path: Path,
+    user: User,
+    year: int,
+    month: int,
+    *,
+    replace: bool,
+    dry_run: bool,
+) -> None:
+    rows = load_month(path, year, month)
     branches = db.query(Branch).filter(Branch.user_id == user.id).all()
     by_slug = {b.slug: b for b in branches}
-    known = existing_pandl_ids(db, user.id)
 
     to_import: list[dict] = []
-    skipped_dup = 0
     unmapped: list[dict] = []
     for row in rows:
-        if row["pid"] in known:
-            skipped_dup += 1
-            continue
         branch = resolve_branch(row["key"], by_slug, user.id)
         if not branch:
             unmapped.append(row)
             continue
         to_import.append({**row, "branch": branch})
 
-    print(f"CSV julho: {len(rows)} mercados")
-    print(f"  Importar: {len(to_import)} | Duplicados PandL: {skipped_dup} | Sem filial: {len(unmapped)}")
-
+    print(f"\n=== {month:02d}/{year} ===")
+    print(f"CSV: {len(rows)} mercados | mapear: {len(to_import)} | sem filial: {len(unmapped)}")
     by_branch: dict[str, list] = defaultdict(list)
     for row in to_import:
         by_branch[row["branch"].name].append(row)
     for name, items in sorted(by_branch.items()):
         pl = sum(i["pl"] for i in items)
         print(f"  {name}: {len(items)} | R$ {pl:,.2f}")
+    print(f"Total mês CSV: R$ {sum(r['pl'] for r in rows):,.2f}")
 
-    csv_total = sum(r["pl"] for r in rows)
-    print(f"Total CSV julho: R$ {csv_total:,.2f}")
-
-    if args.dry_run:
-        db.close()
+    if dry_run:
         return
 
-    removed = 0
-    if args.replace_july:
-        removed = clear_july_non_pandl(db, user.id, args.year, args.month)
-        print(f"Removidos lançamentos julho pré-existentes (não-PandL): {removed}")
+    if replace:
+        removed = clear_month_bets(db, user.id, year, month)
+        print(f"Removidos lançamentos do mês: {removed}")
+        db.flush()
 
     created = 0
     for row in to_import:
         pl = row["pl"]
-        # P&L do extrato BettingPandL já é o impacto na conta (pós-comissão na prática do relatório).
         stake = abs(pl) if pl != 0 else 0.0
-        odds = 2.0
         desc = f"{row['label']} {PANDL_TAG}{row['pid']}]"
         db.add(
             Bet(
                 branch_id=row["branch"].id,
                 description=desc[:200],
-                odds=odds,
+                odds=2.0,
                 stake=round(stake, 2),
                 outcome=row["outcome"],
                 profit_loss=pl,
@@ -311,18 +272,59 @@ def main() -> None:
         created += 1
 
     db.flush()
-    synced = sync_month_summaries(db, user.id, args.year, args.month, COMP_CODE)
+    synced = sync_month_summaries(db, user.id, year, month, COMP_CODE)
     db.commit()
 
-    bets = [b for b in db.query(Bet).join(Branch).filter(Branch.user_id == user.id).all() if bet_in_period(b, args.year, args.month)]
-    print(f"\nImportadas {created} entradas. Consolidados: {synced}.")
-    print(f"Julho/{args.year}: {len(bets)} entradas, P&L R$ {sum(b.profit_loss for b in bets):,.2f}")
-    by: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
-    for b in bets:
-        by[b.branch.name][0] += 1
-        by[b.branch.name][1] += b.profit_loss
-    for name, (n, pl) in sorted(by.items()):
-        print(f"  {name}: {int(n)} | R$ {pl:,.2f}")
+    bets = [
+        b
+        for b in db.query(Bet).join(Branch).filter(Branch.user_id == user.id).all()
+        if bet_in_period(b, year, month)
+    ]
+    print(f"Importadas {created}. Consolidados: {synced}.")
+    print(f"Ledger {month:02d}/{year}: {len(bets)} entradas, P&L R$ {sum(b.profit_loss for b in bets):,.2f}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "csv",
+        nargs="?",
+        default=r"c:\Users\Usuário\Downloads\BettingPandL (1).csv",
+    )
+    parser.add_argument("--year", type=int, default=2026)
+    parser.add_argument(
+        "--months",
+        default="6,7",
+        help="Meses a importar, ex: 6,7",
+    )
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="Apaga todas as entradas do mês antes de importar",
+    )
+    args = parser.parse_args()
+    path = Path(args.csv)
+    if not path.is_file():
+        raise SystemExit(f"CSV not found: {path}")
+
+    months = [int(x.strip()) for x in args.months.split(",") if x.strip()]
+    db = SessionLocal()
+    user = db.query(User).filter(User.email == USER_EMAIL).first()
+    if not user:
+        raise SystemExit(f"User not found: {USER_EMAIL}")
+
+    print(f"CSV: {path.name} | meses={months} | replace={args.replace} | dry_run={args.dry_run}")
+    for month in months:
+        import_month(
+            db,
+            path,
+            user,
+            args.year,
+            month,
+            replace=args.replace,
+            dry_run=args.dry_run,
+        )
     db.close()
 
 
