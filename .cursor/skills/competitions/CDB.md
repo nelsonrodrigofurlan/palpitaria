@@ -2,6 +2,11 @@
 
 Este skill define o comportamento do Palpitaria FC para a Copa do Brasil.
 
+## Fonte de dados
+- **Oficial:** tabela CBF `https://www.cbf.com.br/futebol-brasileiro/tabelas/copa-do-brasil/masculino/{ano}`
+- Código: `services/cbf_cdb_ingest.py` — sync automático quando football-data retorna 403
+- Clubes reaproveitam perfis da Série A/B quando existirem
+
 ## Características do Campeonato
 - **Mata-Mata**: Jogos de ida e volta (ou jogo único no início).
 - **Clima eliminatório**: Underdog fecha; favorito não ganha fácil no 1º tempo; após gol a partida muda (ver `knockout_climate.py`).

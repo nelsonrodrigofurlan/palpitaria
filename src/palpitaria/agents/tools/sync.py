@@ -27,11 +27,15 @@ def _sync_one(db, client: FootballDataClient, code: str) -> dict[str, Any]:
         return result
     except FootballDataError as exc:
         result["error"] = str(exc)
+        if code == "CDB":
+            return _sync_cdb_cbf(db, result)
         if code != "BSB":
             return result
         _log(f"{code} bloqueado em football-data — Odds API")
     except Exception as exc:  # noqa: BLE001 — tool result must surface any failure
         result["error"] = str(exc)
+        if code == "CDB":
+            return _sync_cdb_cbf(db, result)
         if code != "BSB":
             return result
         _log(f"{code} ingest falhou ({exc}) — Odds API")
@@ -47,6 +51,22 @@ def _sync_one(db, client: FootballDataClient, code: str) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         result["error"] = str(exc)
         result["source"] = "odds-api-failed"
+    return result
+
+
+def _sync_cdb_cbf(db, result: dict[str, Any]) -> dict[str, Any]:
+    """Fallback oficial: tabela HTML da CBF (oitavas em diante)."""
+    from palpitaria.services.cbf_cdb_ingest import ingest_cdb_from_cbf
+
+    _log("CDB bloqueado em football-data — tabela oficial CBF")
+    try:
+        ingested = ingest_cdb_from_cbf(db, season=2026, log_callback=_log)
+        result["fixtures"] = int(ingested.get("fixtures") or 0)
+        result["source"] = "cbf-official"
+        result["error"] = None
+    except Exception as exc:  # noqa: BLE001
+        result["error"] = str(exc)
+        result["source"] = "cbf-official-failed"
     return result
 
 
