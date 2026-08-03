@@ -12,6 +12,9 @@ build/
 data/
 *.db
 
+# Secrets
+credentials.local.txt
+
 # IDE / OS
 .idea/
 .vscode/
