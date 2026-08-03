@@ -1,6 +1,23 @@
+import json
+
 import httpx
+from sqlalchemy.orm import Session
+
 from palpitaria.config import settings
 from palpitaria.services.team_names import localize_team_name
+
+SPORT_KEY_BY_COMPETITION = {
+    "BSA": "soccer_brazil_campeonato",
+    "BSB": "soccer_brazil_serie_b",
+    "WC": "soccer_fifa_world_cup",
+    "PL": "soccer_epl",
+    "PD": "soccer_spain_la_liga",
+    "BL1": "soccer_germany_bundesliga",
+    "SA": "soccer_italy_serie_a",
+    "FL1": "soccer_france_ligue_one",
+    "CL": "soccer_uefa_champions_league",
+    "EL": "soccer_uefa_europa_league",
+}
 
 def fetch_odds_api_data(sport="soccer_brazil_campeonato_serie_a", regions="eu", markets="h2h,totals"):
     """
@@ -61,5 +78,22 @@ def extract_betfair_odds(odds_data):
         
         if game_info["betfair_ex"]:
             results.append(game_info)
-            
+
     return results
+
+
+def update_competition_odds(db: Session, comp_code: str) -> None:
+    """Busca odds da Betfair e salva no cache da competição."""
+    from palpitaria.models import Competition
+
+    sport_key = SPORT_KEY_BY_COMPETITION.get(comp_code)
+    if not sport_key:
+        return
+
+    raw_odds = fetch_odds_api_data(sport=sport_key)
+    if isinstance(raw_odds, list):
+        odds_list = extract_betfair_odds(raw_odds)
+        comp = db.query(Competition).filter_by(code=comp_code).first()
+        if comp:
+            comp.odds_json = json.dumps(odds_list)
+            db.commit()
