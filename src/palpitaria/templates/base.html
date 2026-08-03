@@ -1028,7 +1028,7 @@
             </li>
           </ul>
         </li>
-        {% if request.session.get('user_email') == 'nelson.r.furlan@gmail.com' %}
+        {% if request.session.get('is_admin') %}
         <li class="nav-group{% if not request.url.path.startswith('/admin') %} collapsed{% endif %}" data-nav-group="admin">
           <button type="button" class="nav-group-header" onclick="toggleNavGroup(this)" aria-expanded="{{ 'true' if request.url.path.startswith('/admin') else 'false' }}">
             <span>Admin</span>

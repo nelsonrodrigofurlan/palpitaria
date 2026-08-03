@@ -45,7 +45,7 @@
                                     {{ 'Desativar' if u.is_active else 'Ativar' }}
                                 </button>
                             </form>
-                            {% if u.email != 'nelson.r.furlan@gmail.com' %}
+                            {% if not u.is_admin %}
                             <form hx-post="/admin/users/delete/{{ u.id }}" hx-confirm="Tem certeza que deseja excluir este usuário?" hx-target="body">
                                 <button type="submit" class="brief-btn" style="color: #ef4444;">Excluir</button>
                             </form>

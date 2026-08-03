@@ -20,7 +20,6 @@ from palpitaria.services.team_names import ENGLISH_ALIASES, localize_team_name, 
 
 CHAT_HISTORY_DAYS = 2
 CHAT_DAILY_LIMIT = 3
-CHAT_ADMIN_EMAIL = "nelson.r.furlan@gmail.com"
 BANTER_MIN_AGE_HOURS = 2
 
 COLLECTIVE_SYSTEM_PROMPT = """Você é o analista colaborativo da Palpitaria FC no chat de Inteligência Coletiva.
@@ -94,10 +93,6 @@ def fetch_user_chat_history(db: Session, user_id: int, *, ascending: bool = True
     )
 
 
-def is_chat_admin(email: str | None) -> bool:
-    return (email or "").strip().lower() == CHAT_ADMIN_EMAIL
-
-
 def count_user_messages_operational_day(db: Session, user_id: int) -> int:
     from palpitaria.services.analyzer import get_today_context
 
@@ -113,8 +108,8 @@ def count_user_messages_operational_day(db: Session, user_id: int) -> int:
     )
 
 
-def user_chat_daily_quota(db: Session, user_id: int, user_email: str | None = None) -> dict[str, Any]:
-    if is_chat_admin(user_email):
+def user_chat_daily_quota(db: Session, user_id: int, is_admin: bool = False) -> dict[str, Any]:
+    if is_admin:
         return {
             "limited": False,
             "used": 0,

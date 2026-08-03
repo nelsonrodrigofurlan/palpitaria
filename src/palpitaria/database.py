@@ -87,6 +87,9 @@ def apply_schema_migrations() -> None:
                 text("ALTER TABLE users ADD COLUMN IF NOT EXISTS favorite_comp_code VARCHAR(10)")
             )
             conn.execute(
+                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE")
+            )
+            conn.execute(
                 text("ALTER TABLE fixture_reports ADD COLUMN IF NOT EXISTS strategy_json TEXT")
             )
             conn.execute(
@@ -110,6 +113,12 @@ def apply_schema_migrations() -> None:
             report_cols = {c["name"] for c in inspect(engine).get_columns("fixture_reports")}
             if "strategy_json" not in report_cols:
                 conn.execute(text("ALTER TABLE fixture_reports ADD COLUMN strategy_json TEXT"))
+
+            if inspect(engine).has_table("users"):
+                user_cols = {c["name"] for c in inspect(engine).get_columns("users")}
+                if "is_admin" not in user_cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0"))
+
             conn.execute(
                 text(
                     "UPDATE branches SET side = 'LAY' WHERE "
@@ -120,8 +129,18 @@ def apply_schema_migrations() -> None:
             )
             conn.execute(text("UPDATE branches SET side = 'BACK' WHERE side IS NULL"))
 
+        _backfill_root_admin(conn, engine)
         _migrate_pipeline_daily_per_comp(conn, dialect, engine)
         _migrate_user_insights_chat(conn, dialect, engine)
+
+
+def _backfill_root_admin(conn, engine: Engine) -> None:
+    """Garante que o admin histórico (hardcoded antes em main.py) continue com acesso."""
+    if not inspect(engine).has_table("users"):
+        return
+    conn.execute(
+        text("UPDATE users SET is_admin = TRUE WHERE email = 'nelson.r.furlan@gmail.com'")
+    )
 
 
 def _migrate_user_insights_chat(conn, dialect: str, engine: Engine) -> None:

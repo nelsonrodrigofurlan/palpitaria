@@ -37,6 +37,7 @@ class User(Base):
     total_deposits: Mapped[float] = mapped_column(Float, default=0.0)
     total_withdrawals: Mapped[float] = mapped_column(Float, default=0.0)
     favorite_comp_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    is_admin: Mapped[bool] = mapped_column(default=False)
 
     branches: Mapped[list["Branch"]] = relationship(back_populates="user")
     insights: Mapped[list["UserInsight"]] = relationship(back_populates="user")

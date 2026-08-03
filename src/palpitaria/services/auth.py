@@ -1,4 +1,3 @@
-import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -12,8 +11,7 @@ from palpitaria.models import User
 # Configuração de hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Configurações JWT (usaremos para o cookie de sessão)
-SECRET_KEY = os.getenv("SECRET_KEY", "palpitaria-secret-key-2026-secure-v1")
+# JWT usa a mesma SECRET_KEY do SessionMiddleware — fonte única, sem fallback fraco.
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 1 semana
 
@@ -30,7 +28,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
     return encoded_jwt
 
 def get_user_by_email(db: Session, email: str):

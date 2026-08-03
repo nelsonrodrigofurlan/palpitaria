@@ -171,14 +171,10 @@ def test_chat_daily_quota_three_per_day(db_session):
     from palpitaria.services.analyzer import get_today_context
     from palpitaria.services.chat_service import (
         CHAT_DAILY_LIMIT,
-        is_chat_admin,
         user_chat_daily_quota,
     )
 
-    assert is_chat_admin("nelson.r.furlan@gmail.com")
-    assert not is_chat_admin("outro@example.com")
-
-    admin_q = user_chat_daily_quota(db_session, 999, "nelson.r.furlan@gmail.com")
+    admin_q = user_chat_daily_quota(db_session, 999, is_admin=True)
     assert admin_q["limited"] is False
     assert admin_q["blocked"] is False
 
@@ -194,7 +190,7 @@ def test_chat_daily_quota_three_per_day(db_session):
         )
     db_session.commit()
 
-    q = user_chat_daily_quota(db_session, user.id, user.email)
+    q = user_chat_daily_quota(db_session, user.id, user.is_admin)
     assert q["used"] == CHAT_DAILY_LIMIT
     assert q["remaining"] == 0
     assert q["blocked"] is True

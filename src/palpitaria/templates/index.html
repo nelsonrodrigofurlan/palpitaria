@@ -39,7 +39,7 @@
 {% endif %}
 
 <div class="actions">
-  {% if request.session.get('user_email') == 'nelson.r.furlan@gmail.com' %}
+  {% if request.session.get('is_admin') %}
     {% if pipeline_running %}
     <button type="button" disabled style="background: #94a3b8; color: white; font-weight: 700; padding: 0.75rem 2rem; border-radius: 12px; border: none; cursor: not-allowed; display: flex; align-items: center; gap: 0.5rem; opacity: 0.85;">
       ⏳ Atualização em andamento…

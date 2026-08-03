@@ -123,6 +123,9 @@ def _format_kickoff(utc_naive: datetime, tz_name: str) -> str:
 TEMPLATES.env.filters["kickoff"] = _format_kickoff
 TEMPLATES.env.filters["tojson"] = lambda obj: json.dumps(obj, ensure_ascii=False)
 
+if settings.secret_key_error:
+    raise RuntimeError(settings.secret_key_error)
+
 app = FastAPI(title="Palpitaria FC", description="Leitura fundamentada para mercados de gols")
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
@@ -145,7 +148,7 @@ def login_required(request: Request, user=Depends(get_current_user)):
 
 
 def admin_required(request: Request, user=Depends(login_required)):
-    if user.email != "nelson.r.furlan@gmail.com":
+    if not getattr(user, "is_admin", False):
         raise HTTPException(status_code=403, detail="Acesso negado: peça beça pro Pai")
     return user
 
@@ -359,6 +362,7 @@ async def login(
 
     request.session["user_id"] = user.id
     request.session["user_email"] = user.email
+    request.session["is_admin"] = bool(user.is_admin)
     request.session["terms_accepted"] = True
     return RedirectResponse(url="/", status_code=303)
 
@@ -1290,7 +1294,7 @@ def chat_page(request: Request, db: Session = Depends(get_db), user=Depends(logi
 
     cy, cm = current_period()
     history = fetch_user_chat_history(db, user.id, ascending=True)
-    quota = user_chat_daily_quota(db, user.id, user.email)
+    quota = user_chat_daily_quota(db, user.id, user.is_admin)
     return TEMPLATES.TemplateResponse(
         request,
         "chat.html",
@@ -1308,7 +1312,7 @@ async def chat_send(request: Request, db: Session = Depends(get_db), user=Depend
     from palpitaria.services.chat_service import process_user_message, user_chat_daily_quota
     from palpitaria.services.config_service import get_api_config
 
-    quota = user_chat_daily_quota(db, user.id, user.email)
+    quota = user_chat_daily_quota(db, user.id, user.is_admin)
     if quota["blocked"]:
         return TEMPLATES.TemplateResponse(
             request,
@@ -1328,7 +1332,7 @@ async def chat_send(request: Request, db: Session = Depends(get_db), user=Depend
         return ""
     
     result = process_user_message(db, message, user_id=user.id)
-    quota_after = user_chat_daily_quota(db, user.id, user.email)
+    quota_after = user_chat_daily_quota(db, user.id, user.is_admin)
 
     return TEMPLATES.TemplateResponse(
         request,
@@ -1698,7 +1702,7 @@ async def admin_add_user(request: Request, db: Session = Depends(get_db), user=D
 def admin_toggle_user(target_id: int, db: Session = Depends(get_db), user=Depends(admin_required)):
     from palpitaria.models import User
     target = db.query(User).filter(User.id == target_id).first()
-    if target and target.email != "nelson.r.furlan@gmail.com":
+    if target and not target.is_admin:
         target.is_active = not target.is_active
         db.commit()
     return RedirectResponse(url="/admin/users", status_code=303)
@@ -1708,7 +1712,7 @@ def admin_toggle_user(target_id: int, db: Session = Depends(get_db), user=Depend
 def admin_delete_user(target_id: int, db: Session = Depends(get_db), user=Depends(admin_required)):
     from palpitaria.models import User
     target = db.query(User).filter(User.id == target_id).first()
-    if target and target.email != "nelson.r.furlan@gmail.com":
+    if target and not target.is_admin:
         db.delete(target)
         db.commit()
     return RedirectResponse(url="/admin/users", status_code=303)

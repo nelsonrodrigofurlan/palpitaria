@@ -66,7 +66,7 @@ class Settings(BaseSettings):
 
     database_url: str = ""
     debug: bool = False
-    secret_key: str = "palpitaria-secret-key-2026-secure-v1"
+    secret_key: str = ""
     pipeline_trigger_secret: str = ""
 
     # Betfair API
@@ -83,6 +83,7 @@ class Settings(BaseSettings):
         "football_data_token",
         "openai_base_url",
         "app_url",
+        "secret_key",
         "pipeline_trigger_secret",
         "betfair_app_key",
         "betfair_username",
@@ -203,6 +204,18 @@ class Settings(BaseSettings):
         path = Path("data")
         path.mkdir(exist_ok=True)
         return path
+
+    @property
+    def secret_key_error(self) -> str | None:
+        """SECRET_KEY é obrigatória e forte — assina os cookies de sessão (login/admin)."""
+        if len(self.secret_key) >= 32:
+            return None
+        return (
+            "SECRET_KEY ausente ou fraca (mínimo 32 caracteres). "
+            "Sem ela, cookies de sessão podem ser forjados e a conta admin fica exposta. "
+            "Gere uma com: python -c \"import secrets; print(secrets.token_hex(32))\" "
+            "e defina SECRET_KEY no .env (local) ou nas variáveis de ambiente do Cloud Run (produção)."
+        )
 
     @property
     def has_pipeline_trigger(self) -> bool:
