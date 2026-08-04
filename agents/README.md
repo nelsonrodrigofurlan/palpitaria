@@ -2,6 +2,8 @@
 
 Pasta de **contratos de agente** no padrão do módulo 4 (POS): identidade, regras, habilidades, ciclo perceber→planejar→agir→avaliar.
 
+> Regras de negócio (filosofia anti-zero-gols, mercados, campeonatos) vivem em [`.cursor/skills/betfair/SKILL.md`](../.cursor/skills/betfair/SKILL.md) — é a fonte de verdade do domínio. Aqui só o contrato de **execução** do agente. Se uma política mudar em um dos dois lados, replicar no outro.
+
 | Agente | Tipo | Papel |
 |--------|------|--------|
 | [`palpitaria-diario/`](palpitaria-diario/) | `task_based` (schedule → `autonomous`) | Rotina do dia: sync → análise com gate de fundamento → rascunho de alerta → histórico IA |

@@ -46,6 +46,7 @@ politicas:
   - rascunho_diario e obrigatorio antes de FINALIZAR
   - publicar_indicacoes exige confirmacao humana; nunca auto-publicar para grupo ou rede
   - competicoes padrao do dia: BSA e BSB; WC so se houver jogo na janela
+  - CDB (Copa do Brasil) suportado via --comps (fallback CBF se football-data der 403) mas NAO entra no padrao ainda — decisao de produto pendente, ver context.md
   - janela operacional: 06:00 → 06:00 America/Sao_Paulo
   - P&L e comissao de filial nao sao responsabilidade deste agente
   - parar se nao houver progresso apos 3 etapas consecutivas

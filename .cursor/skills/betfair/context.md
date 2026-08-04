@@ -1,6 +1,8 @@
 # Palpitaria FC — Contexto do Projeto
 
-Documento vivo — atualizar a cada descoberta. Última revisão: 2026-06-13.
+Documento vivo — atualizar a cada descoberta. Última revisão: 2026-08-04.
+
+> **Estado resumido (ver [SKILL.md](SKILL.md) para o quadro completo):** Fase 2→3 — pivot pós-Copa para Brasileirão A/B como base, com Copa do Brasil (CDB) e wind-down da Copa do Mundo (WC) em paralelo. Produto em uso real (não mais greenfield): auth com papéis (`is_admin`), ledger de filiais, chat colaborativo e painel admin já implementados. As seções abaixo registram a visão original e as decisões de descoberta; o histórico de marcos de implementação está em [Marcos de implementação](#marcos-de-implementação-via-git-log) no fim do arquivo.
 
 > **Regra de marca:** Usar o nome **Palpitaria FC**. O domínio oficial é `palpitariafc.com.br`. Nunca usar o nome Betfair em UI ou documentação pública.
 
@@ -240,11 +242,11 @@ Cada **tipo de entrada** opera como uma **filial** — uma "empresa" independent
 
 ## Restrições conhecidas
 
-- Repositório greenfield; sem commits ainda.
 - **Sem marca Betfair** em qualquer superfície do produto.
 - Validação privada — não publicar picks até ter histórico de acerto.
 - API oficial da exchange descartada por custo.
 - 100 req/dia (API-Football free) exige cache agressivo e ingestão batch.
+- football-data.org retorna 403 para Copa do Brasil (CDB) no plano atual — fallback via tabela oficial HTML da CBF (`services/cbf_cdb_ingest.py`).
 
 ## Decisões tomadas
 
@@ -279,13 +281,14 @@ Cada **tipo de entrada** opera como uma **filial** — uma "empresa" independent
 
 ## Decisões pendentes
 
-- [ ] Limiares numéricos do filtro (calibrar com dados reais das seleções)
-- [ ] Formato do app (web dashboard vs CLI vs notebook)
+- [ ] Limiares numéricos do filtro (calibrar com dados reais; ainda não recalibrado desde o pivot BSA/BSB)
+- [ ] Viabilidade de acesso via sessão à exchange (P&D nunca retomado)
+- [ ] Detalhamento fino do modelo de filiais (bankroll global, stake sizing) — P&L e comissão por filial já funcionam
+- [ ] CDB (Copa do Brasil) fazer parte do sync **padrão** do agente diário ou continuar só sob demanda (`agents/palpitaria-diario/rules.md` hoje só lista BSA/BSB por padrão)
 - [x] Banco de dados — Supabase (PostgreSQL)
-- [ ] API key API-Football (fundador registrar free tier)
-- [ ] Viabilidade de acesso via sessão à exchange
-- [ ] Nome do produto (working title)
-- [ ] Detalhamento do modelo de filiais (bankroll, stake, métricas)
+- [x] Formato do app — web (FastAPI + HTMX + Jinja2)
+- [x] Nome do produto — Palpitaria FC (`palpitariafc.com.br`)
+- [x] Autenticação e papéis — JWT/sessão (`services/auth.py`) + papel `User.is_admin` (sem mais e-mail hardcoded)
 
 ## Notas da conversa
 
@@ -335,3 +338,19 @@ Cada **tipo de entrada** opera como uma **filial** — uma "empresa" independent
 | Filtro anti-zero-gols | Regras de exclusão — jogo não indicado se 0 gols for plausível nos dados |
 | Score de potencial de gols | Métrica composta para ranquear jogos que passaram no filtro |
 | Desfalque crítico | Titular top ofensivo ausente; impacto quantificado na projeção de gols |
+
+## Marcos de implementação (via git log)
+
+> Diferente das "Sessões" acima (registro de conversa), esta tabela é derivada do histórico de commits — factual, sem reconstrução de diálogo. Mantida para a memória viva não perder o fio entre a última sessão registrada (2026-06-13) e o estado atual do código.
+
+| Marco | O que mudou | Onde |
+|-------|-------------|------|
+| Pivot BSA/BSB | Brasileirão A/B vira campeonato base pós-Copa; WC em wind-down | `services/competitions.py`, `.cursor/skills/competitions/{BSA,BSB}.md` |
+| Copa do Brasil (CDB) | football-data.org bloqueia CDB (403) → fallback scraping da tabela oficial CBF | `services/cbf_cdb_ingest.py`, `.cursor/skills/competitions/CDB.md`, `agents/tools/sync.py` |
+| Ledger / filiais líquidas | P&L sempre líquido de comissão (BACK e LAY); import de CSV Betfair com idempotência `[BF:id]` | `services/ledger.py`, `scripts/import_betfair_csv.py` |
+| Inteligência Coletiva (chat) | Chat colaborativo que opina com dados mas nunca sobrescreve o palpite oficial do pipeline | `services/chat_service.py`, rota `/chat` |
+| Autenticação e papéis | JWT + sessão; papel `User.is_admin` substitui e-mail de admin hardcoded; `SECRET_KEY` forte (≥32 chars) passa a ser obrigatória no boot | `services/auth.py`, `config.py`, `deps.py` |
+| Refatoração de rotas | `main.py` dividido em routers por domínio (auth, home/pipeline, ledger, ia_historico, pages, chat, ciclos, admin, system) | `routers/` |
+| Cobertura de testes de API | Testes para login/sessão, gate de admin (`is_admin`) e roundtrip do ledger | `tests/` |
+
+**Lacuna aberta:** o contrato do agente diário (`agents/palpitaria-diario/rules.md`) ainda lista só BSA/BSB como competições padrão — CDB existe e funciona, mas não entrou na rotina automática. Decisão de produto pendente (ver Decisões pendentes acima).

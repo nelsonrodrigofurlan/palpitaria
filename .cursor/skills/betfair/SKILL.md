@@ -123,6 +123,16 @@ Ao analisar um jogo, identifique o `competition_code` e aplique as regras do esp
 
 **Ao criar ou alterar skills:** editar arquivos em `.cursor/skills/`; a página admin reflete pelo `mtime` do arquivo. Novo arquivo `.md` → adicionar resumo em `PLAIN_PURPOSE` em `services/skills_reader.py`.
 
+## Autenticação & segurança
+
+| Item | Como funciona |
+|------|---------------|
+| Login | Sessão + JWT (`services/auth.py`); senha com bcrypt (`passlib`) |
+| Papel admin | `User.is_admin` (coluna no banco) — **não** é mais e-mail hardcoded |
+| `SECRET_KEY` | Obrigatória e forte (≥ 32 caracteres) para o app subir; assina cookie de sessão e JWT com a mesma chave (`config.py`) |
+| Painel `/admin/*` | Protegido por `admin_required` (`deps.py`); root pode criar/desativar/apagar usuários (exceto outro admin) |
+| Credenciais | Nunca versionar `.env` nem `credentials.local.txt`; `start.txt` não guarda mais senha em texto puro |
+
 ## Pipeline de decisão (gols)
 
 ```
@@ -235,3 +245,9 @@ Sincronizar com `context.md`:
 - Stalking seleções Copa (fontes FIFA, ESPN, Transfermarkt, FBref…): [copa-mundo-stalking.md](copa-mundo-stalking.md)
 - API-Football docs: https://www.api-football.com/documentation-v3
 - football-data.org: https://www.football-data.org/documentation/api
+
+## Relação com `agents/palpitaria-diario/`
+
+Esta skill (`.cursor/skills/`) é a **fonte de verdade do domínio**: filosofia do produto, regras de mercado, estado do projeto — para qualquer colaborador (humano ou IA) entender o "porquê". `agents/palpitaria-diario/` é o **contrato de execução** do agente autônomo que roda a rotina diária (padrão módulo 4: `agent.md`/`rules.md`/`skills.md`/`memory.md`) — o "como", em YAML, consumido pelo runtime `palpitaria.agents`.
+
+Nunca deveriam divergir: se uma política de negócio muda aqui (ex. filtro anti-zero-gols, campeonatos padrão), replicar em `agents/palpitaria-diario/rules.md`; se o agente ganhar uma tool nova, documentar aqui o efeito no produto. Ver [agents/README.md](../../agents/README.md) para o runtime.
