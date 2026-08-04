@@ -30,10 +30,10 @@ Acesse: http://127.0.0.1:8000
 
 ## Identidade Visual
 
-As artes conceituais estão em `assets/`:
-- `logo_brazilian_soul.png`
-- `dashboard_brazilian_style.png`
-- `app_icon_brazilian_flair.png`
+As artes conceituais estão em `src/palpitaria/static/assets/`:
+- `logo.png`
+- `logo_soul.png`
+- `icon.png`
 
 ---
 *Domínio oficial: palpitariafc.com.br*
