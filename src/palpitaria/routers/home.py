@@ -100,7 +100,8 @@ def _codes_for_scope(db: Session, scope: str) -> list[str]:
 def _render_home(request: Request, db: Session, user, comp_code: str | None = None) -> HTMLResponse:
     from palpitaria.services.competitions import active_competition_codes, resolve_competition_codes
 
-    localize_existing_teams(db)
+    # localize_existing_teams roda no sync/pipeline (onde times novos entram);
+    # rodar em toda visita à home era um full scan de teams.all() + commit à toa.
 
     active_comps = db.query(Competition).filter_by(is_active=True).order_by(Competition.code).all()
     # Default = Todos (visão geral). Filtro opcional via ?comp=
@@ -139,14 +140,18 @@ def _render_home(request: Request, db: Session, user, comp_code: str | None = No
             pass
 
     from palpitaria.services.pipeline_trigger import pipeline_used_today
-    from palpitaria.services.chat_service import _odds_for_match
+    from palpitaria.services.chat_service import load_competition_odds_games, match_odds_in_games
     from palpitaria.services.strategy_card import enrich_strategy_card_display_mode
 
+    # Cache por competição: 1 query + 1 json.loads por comp, não por jogo exibido.
+    odds_games_cache: dict[str, list | None] = {}
     for item in analyses:
         item_comp = item.competition_code or filter_code or "BSA"
+        if item_comp not in odds_games_cache:
+            odds_games_cache[item_comp] = load_competition_odds_games(db, item_comp)
         enrich_strategy_card_display_mode(
             item,
-            _odds_for_match(db, item.home_name, item.away_name, item_comp),
+            match_odds_in_games(odds_games_cache[item_comp], item.home_name, item.away_name),
         )
 
     gate_comp = filter_code or "ALL"

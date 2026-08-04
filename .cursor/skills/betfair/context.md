@@ -281,10 +281,11 @@ Cada **tipo de entrada** opera como uma **filial** — uma "empresa" independent
 | 2026-08-04 | Copa do Mundo (WC) desativada | Torneio encerrado — sem mais jogos para analisar |
 | 2026-08-04 | Brasileirão Série B (BSB) desativada | Fundador decidiu não gastar mais token na B |
 | 2026-08-04 | CDB entra no sync/análise **padrão** do agente diário (junto com BSA) | Substitui BSB no ciclo diário; `ensure_competitions()` não força mais reativação de BSB |
+| 2026-08-04 | Limiares do filtro anti-zero-gols passam a ser **por competição** (`CompetitionProfile`), não mais globais (`settings.py`) | Os globais eram calibrados pra seleções da Copa; para BSA eram inertes na prática (`min_combined_avg_goals` passava em 100% dos confrontos reais; `strong_combined_avg_goals` e `strong_both_score_rate` eram inalcançáveis — 0% dos confrontos reais chegavam lá) |
+| 2026-08-04 | BSA recalibrada com dados reais dos 20 clubes ativos (perfis ≥5 jogos, matchups par-a-par) | Ver `services/competitions.py::_BSA_THRESHOLDS` para o raciocínio de cada valor. BSB e CDB herdam a mesma calibração (poucos dados próprios); WC mantém os valores originais (desativada, preservada como referência) |
 
 ## Decisões pendentes
 
-- [ ] Limiares numéricos do filtro (calibrar com dados reais; ainda não recalibrado desde o pivot BSA/BSB)
 - [ ] Viabilidade de acesso via sessão à exchange (P&D nunca retomado)
 - [ ] Detalhamento fino do modelo de filiais (bankroll global, stake sizing) — P&L e comissão por filial já funcionam
 - [x] Banco de dados — Supabase (PostgreSQL)

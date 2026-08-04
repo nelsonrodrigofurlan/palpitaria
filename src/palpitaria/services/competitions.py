@@ -66,7 +66,7 @@ _BSA_THRESHOLDS = dict(
     strong_both_score_rate=0.62,  # era 0.70 (inalcançável); p90 real = 0.66
     min_over_05_historical_rate=0.88,  # ok — entre p10 (0.85) e p25 (0.90)
     strong_over_05_historical_rate=0.95,  # ok — bate com p75 real
-    min_offense_goals=0.95,  # era 0.8 (quase não-filtro); pior time real = 0.895
+    min_offense_goals=0.85,  # era 0.8 (quase não-filtro); pior time real = 0.895 — 0.95 excluiria até ele
     strong_offense_goals=1.5,  # ok — só os ataques realmente fortes passam
 )
 

@@ -346,15 +346,23 @@ def _report_summary(report: FixtureReport | None) -> dict[str, Any] | None:
     }
 
 
-def _odds_for_match(
-    db: Session, home_name: str, away_name: str, competition_code: str
-) -> dict[str, Any] | None:
+def load_competition_odds_games(db: Session, competition_code: str) -> list[dict] | None:
+    """Parte cara de _odds_for_match — 1 query + 1 json.loads. Cacheável por competição
+    quando o chamador precisa checar odds de várias partidas (ex.: lista da home)."""
     comp = db.query(Competition).filter_by(code=competition_code).first()
     if not comp or not comp.odds_json:
         return None
     try:
-        games = json.loads(comp.odds_json)
+        return json.loads(comp.odds_json)
     except json.JSONDecodeError:
+        return None
+
+
+def match_odds_in_games(
+    games: list[dict] | None, home_name: str, away_name: str
+) -> dict[str, Any] | None:
+    """Parte em memória de _odds_for_match — sem tocar no banco."""
+    if not games:
         return None
     home_n = _normalize_text(home_name)
     away_n = _normalize_text(away_name)
@@ -376,6 +384,13 @@ def _odds_for_match(
                 )
             return {"home": game.get("home_team"), "away": game.get("away_team"), "markets": slim}
     return None
+
+
+def _odds_for_match(
+    db: Session, home_name: str, away_name: str, competition_code: str
+) -> dict[str, Any] | None:
+    games = load_competition_odds_games(db, competition_code)
+    return match_odds_in_games(games, home_name, away_name)
 
 
 def _message_wants_fresh_web(message: str) -> bool:
