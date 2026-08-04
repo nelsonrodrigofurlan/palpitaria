@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from palpitaria.config import settings
-from palpitaria.database import Base
+from palpitaria.database import Base, apply_schema_migrations
 
 
 def _require_supabase_engine():
@@ -16,6 +16,10 @@ def _require_supabase_engine():
     except Exception as exc:
         pytest.skip(f"Supabase indisponível: {exc}")
     Base.metadata.create_all(engine)
+    # create_all só cria tabelas novas; colunas adicionadas em tabelas existentes
+    # (ex.: users.is_admin) só entram via apply_schema_migrations — mesma função
+    # que o app roda no startup real. Sem isso o schema de teste desalinha do prod.
+    apply_schema_migrations()
     return engine
 
 
