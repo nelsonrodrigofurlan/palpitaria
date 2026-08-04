@@ -44,7 +44,7 @@ def analisar_jogos_hoje(
     narrar: bool = True,
     persistir: bool = True,
 ) -> dict[str, Any]:
-    codes = [c.strip().upper() for c in (competicoes or ["BSA", "BSB"]) if c]
+    codes = [c.strip().upper() for c in (competicoes or ["BSA", "CDB"]) if c]
     ctx = get_today_context()
     db = SessionLocal()
     homologadas: list[dict[str, Any]] = []

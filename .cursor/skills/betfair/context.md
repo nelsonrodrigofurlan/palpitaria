@@ -2,7 +2,7 @@
 
 Documento vivo — atualizar a cada descoberta. Última revisão: 2026-08-04.
 
-> **Estado resumido (ver [SKILL.md](SKILL.md) para o quadro completo):** Fase 2→3 — pivot pós-Copa para Brasileirão A/B como base, com Copa do Brasil (CDB) e wind-down da Copa do Mundo (WC) em paralelo. Produto em uso real (não mais greenfield): auth com papéis (`is_admin`), ledger de filiais, chat colaborativo e painel admin já implementados. As seções abaixo registram a visão original e as decisões de descoberta; o histórico de marcos de implementação está em [Marcos de implementação](#marcos-de-implementação-via-git-log) no fim do arquivo.
+> **Estado resumido (ver [SKILL.md](SKILL.md) para o quadro completo):** Fase 3 — Copa do Mundo encerrada, Série B desativada (economia de token); base do produto agora é **Brasileirão A + Copa do Brasil (CDB)**. Produto em uso real (não mais greenfield): auth com papéis (`is_admin`), ledger de filiais, chat colaborativo e painel admin já implementados. As seções abaixo registram a visão original e as decisões de descoberta; o histórico de marcos de implementação está em [Marcos de implementação](#marcos-de-implementação-via-git-log) no fim do arquivo.
 
 > **Regra de marca:** Usar o nome **Palpitaria FC**. O domínio oficial é `palpitariafc.com.br`. Nunca usar o nome Betfair em UI ou documentação pública.
 
@@ -278,17 +278,20 @@ Cada **tipo de entrada** opera como uma **filial** — uma "empresa" independent
 | 2026-06-13 | LLM via OpenRouter + OpenAI SDK | Mesmo padrão SpeakFlow; `OPENAI_API_KEY` sk-or- |
 | 2026-06-13 | Modelo default | `google/gemini-2.0-flash-001` via OpenRouter |
 | 2026-06-13 | Fix: UNIQUE constraint teams.external_id | Habilitado autoflush no SQLAlchemy para evitar duplicatas na ingestão |
+| 2026-08-04 | Copa do Mundo (WC) desativada | Torneio encerrado — sem mais jogos para analisar |
+| 2026-08-04 | Brasileirão Série B (BSB) desativada | Fundador decidiu não gastar mais token na B |
+| 2026-08-04 | CDB entra no sync/análise **padrão** do agente diário (junto com BSA) | Substitui BSB no ciclo diário; `ensure_competitions()` não força mais reativação de BSB |
 
 ## Decisões pendentes
 
 - [ ] Limiares numéricos do filtro (calibrar com dados reais; ainda não recalibrado desde o pivot BSA/BSB)
 - [ ] Viabilidade de acesso via sessão à exchange (P&D nunca retomado)
 - [ ] Detalhamento fino do modelo de filiais (bankroll global, stake sizing) — P&L e comissão por filial já funcionam
-- [ ] CDB (Copa do Brasil) fazer parte do sync **padrão** do agente diário ou continuar só sob demanda (`agents/palpitaria-diario/rules.md` hoje só lista BSA/BSB por padrão)
 - [x] Banco de dados — Supabase (PostgreSQL)
 - [x] Formato do app — web (FastAPI + HTMX + Jinja2)
 - [x] Nome do produto — Palpitaria FC (`palpitariafc.com.br`)
 - [x] Autenticação e papéis — JWT/sessão (`services/auth.py`) + papel `User.is_admin` (sem mais e-mail hardcoded)
+- [x] CDB no sync padrão do agente diário — decidido 2026-08-04: sim, entra no padrão junto com BSA
 
 ## Notas da conversa
 
@@ -353,4 +356,4 @@ Cada **tipo de entrada** opera como uma **filial** — uma "empresa" independent
 | Refatoração de rotas | `main.py` dividido em routers por domínio (auth, home/pipeline, ledger, ia_historico, pages, chat, ciclos, admin, system) | `routers/` |
 | Cobertura de testes de API | Testes para login/sessão, gate de admin (`is_admin`) e roundtrip do ledger | `tests/` |
 
-**Lacuna aberta:** o contrato do agente diário (`agents/palpitaria-diario/rules.md`) ainda lista só BSA/BSB como competições padrão — CDB existe e funciona, mas não entrou na rotina automática. Decisão de produto pendente (ver Decisões pendentes acima).
+**Lacuna fechada (2026-08-04):** o contrato do agente diário (`agents/palpitaria-diario/rules.md`) e os defaults de código (`agents/tools/sync.py`, `agents/tools/analyze.py`, `agents/cli.py`, `agents/runner.py`, `agents/contracts.py`) agora usam **BSA + CDB** como padrão. `services/competitions.ensure_competitions()` foi ajustada para não forçar mais BSB de volta para ativa a cada sync — antes disso era um bug real: o agente reativava BSB silenciosamente toda vez que rodava, mesmo com a competição desligada no admin.

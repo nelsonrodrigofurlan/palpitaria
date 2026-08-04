@@ -75,7 +75,7 @@ def _enrich_args(
 ) -> dict[str, Any]:
     """Mescla argumentos da LLM com defaults do runtime / resultados previos."""
     ops = estado.get("opcoes") or {}
-    comps = list(estado.get("competicoes") or ["BSA", "BSB"])
+    comps = list(estado.get("competicoes") or ["BSA", "CDB"])
     ctx = estado.get("contexto") or {}
     merged: dict[str, Any] = dict(args or {})
 

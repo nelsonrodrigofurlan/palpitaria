@@ -85,14 +85,14 @@ def sincronizar_competicoes(
     forcar: bool = False,
 ) -> dict[str, Any]:
     _ = forcar  # reserved: force refresh profiles
-    codes = [c.strip().upper() for c in (competicoes or ["BSA", "BSB"]) if c]
+    codes = [c.strip().upper() for c in (competicoes or ["BSA", "CDB"]) if c]
     db = SessionLocal()
     erros: list[str] = []
     fixtures_por_comp: dict[str, int] = {}
     detalhes: list[dict[str, Any]] = []
 
     try:
-        ensure_competitions(db, activate_brazil=True)
+        ensure_competitions(db)
         client = FootballDataClient()
         for code in codes:
             if code == "WC":

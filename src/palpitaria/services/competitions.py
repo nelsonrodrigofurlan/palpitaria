@@ -111,21 +111,26 @@ def resolve_competition_codes(
     return active_competition_codes(db)
 
 
-def ensure_competitions(db, *, activate_brazil: bool = True, deactivate_wc: bool = False) -> list[str]:
-    """Garante linhas BSA/BSB/CDB/WC na tabela competitions."""
+def ensure_competitions(db, *, activate_bsa: bool = True, activate_bsb: bool = False) -> list[str]:
+    """Garante linhas BSA/BSB/CDB/WC na tabela competitions.
+
+    Estado padrão pós-Copa: BSA ativa, CDB ativa; BSB e WC ficam como o admin
+    deixar (Copa encerrada; Série B fora do escopo por custo de token) — não
+    forçamos reativação delas aqui, só de BSA.
+    """
     from palpitaria.models import Competition
 
     touched: list[str] = []
     for code, profile in PROFILES.items():
         row = db.query(Competition).filter_by(code=code).one_or_none()
         if row is None:
-            active = True
-            if code == "WC" and deactivate_wc:
-                active = False
-            elif code in ("BSA", "BSB") and not activate_brazil:
-                active = False
+            if code == "BSA":
+                active = activate_bsa
+            elif code == "BSB":
+                active = activate_bsb
             elif code == "CDB":
-                # CDB entra inativa por padrão; ativar manualmente no admin quando a fase rolar
+                active = True
+            else:  # WC
                 active = False
             db.add(
                 Competition(
@@ -140,10 +145,8 @@ def ensure_competitions(db, *, activate_brazil: bool = True, deactivate_wc: bool
             row.name = profile.name
             if row.season < profile.season_default:
                 row.season = profile.season_default
-            if code in ("BSA", "BSB") and activate_brazil:
+            if code == "BSA" and activate_bsa:
                 row.is_active = True
-            if code == "WC" and deactivate_wc:
-                row.is_active = False
             touched.append(f"~{code}")
     db.commit()
     return touched

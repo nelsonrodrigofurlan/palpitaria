@@ -1,4 +1,4 @@
-"""Garante competições BSA/BSB ativas (e opcionalmente desativa WC)."""
+"""Garante linhas BSA/BSB/CDB/WC no banco. Padrão pós-Copa: BSA + CDB ativas."""
 
 from __future__ import annotations
 
@@ -15,6 +15,11 @@ from palpitaria.services.competitions import ensure_competitions
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--activate-bsb",
+        action="store_true",
+        help="Reativa BSB (desativada por padrão desde 2026-08 para economizar token)",
+    )
+    parser.add_argument(
         "--deactivate-wc",
         action="store_true",
         help="Marca WC como inativa (mantém dados históricos)",
@@ -22,7 +27,14 @@ def main() -> None:
     args = parser.parse_args()
     db = SessionLocal()
     try:
-        touched = ensure_competitions(db, activate_brazil=True, deactivate_wc=args.deactivate_wc)
+        touched = ensure_competitions(db, activate_bsa=True, activate_bsb=args.activate_bsb)
+        if args.deactivate_wc:
+            from palpitaria.models import Competition
+
+            wc = db.query(Competition).filter_by(code="WC").one_or_none()
+            if wc:
+                wc.is_active = False
+                db.commit()
         print("Competitions:", ", ".join(touched))
         from palpitaria.models import Competition
 

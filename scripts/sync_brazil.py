@@ -1,4 +1,8 @@
-"""Sync BSA + BSB; BSB cai para Odds API se football-data der 403."""
+"""Sync manual BSA + BSB (debug); BSB cai para Odds API se football-data der 403.
+
+BSB está desativada no produto desde 2026-08 (token) — este script continua
+existindo como ferramenta manual de depuração, não roda automaticamente.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +32,7 @@ def log(msg: str) -> None:
 def main() -> None:
     db = SessionLocal()
     try:
-        ensure_competitions(db, activate_brazil=True)
+        ensure_competitions(db, activate_bsa=True, activate_bsb=True)
         client = FootballDataClient()
 
         # --- BSA (API) ---

@@ -64,7 +64,7 @@ def create_state(
         "objetivo": ciclo.get("objetivo") or agente.get("objetivo") or "desconhecido",
         "entrada": entrada,
         "tipo_agente": modo or agente.get("tipo") or "task_based",
-        "competicoes": competicoes or ["BSA", "BSB"],
+        "competicoes": competicoes or ["BSA", "CDB"],
         "etapa": 0,
         "chamadas_ferramenta": 0,
         "chamadas_por_ferramenta": {},

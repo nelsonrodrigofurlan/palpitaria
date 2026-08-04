@@ -12,9 +12,9 @@ Pasta de **contratos de agente** no padrão do módulo 4 (POS): identidade, regr
 
 ```bash
 python -m palpitaria.agents validar
-python -m palpitaria.agents rodar --comps BSA,BSB                 # planejador LLM
-python -m palpitaria.agents rodar --comps BSA,BSB --planejador fixed
-python -m palpitaria.agents rascunho --comps BSA,BSB --sem-narrar
+python -m palpitaria.agents rodar --comps BSA,CDB                 # planejador LLM (padrao atual)
+python -m palpitaria.agents rodar --comps BSA,CDB --planejador fixed
+python -m palpitaria.agents rascunho --comps BSA,CDB --sem-narrar
 ```
 
 Ciclo: perceber → planejar (`llm` ou `fixed`) → agir → avaliar. Tools: sync → análise (fundamento) → histórico IA → rascunho. `publicar` é opcional + confirmação.

@@ -20,11 +20,11 @@ Skill de contexto e workflow. Leia [context.md](context.md) antes de propor cód
 
 | Item | Valor |
 |------|-------|
-| Fase | **2 → 3** — Pivot pós-Copa: **Brasileirão A/B** + motor de predição |
+| Fase | **3** — Pós-Copa consolidado: **Brasileirão A + Copa do Brasil** + motor de predição |
 | Repositório | Ativo |
 | Produto | Modelo preditivo explicável para apostas esportivas |
 | Saída core | Probs Poisson + edge + 3 cenários + cartão narrado |
-| Liga ativa | **BSA + BSB** (football-data.org); WC em wind-down |
+| Liga ativa | **BSA + CDB** (2026-08-04). **BSB e WC desativadas** — Copa encerrada; Série B fora do escopo para não gastar token |
 | MVP imediato | Brasileirão 2026 — API first, LLM só narra |
 | Filosofia | **Modelo decide, LLM narra** — `prediction.py` + `narrate.py` (1 call) |
 | Dados | 12 meses histórico; seleções, jogadores, eliminatórias |
@@ -69,26 +69,29 @@ Mapeamento filial (resumo): Over 0,5 / 1,5 / 2,5 BACK → filiais over; 1X2 → 
 
 | Camada | O quê | Tokens / custo |
 |--------|--------|----------------|
-| **0** | Sync API (fixtures, odds) BSA/BSB/WC | Quase zero LLM |
+| **0** | Sync API (fixtures, odds) BSA/CDB | Quase zero LLM |
 | **1** | Filtro numérico + **Poisson** (`prediction.py`) | Zero LLM |
 | **2** | **Uma** narrativa (`narrate.py`) só se houver pick | 1 call/jogo com pick |
-| **3** | Web stalking **condicional** (Copa hybrid; Brasil API-first) | Só buraco/desfalque |
+| **3** | Web stalking **condicional** (mata-mata CDB; Brasil API-first) | Só buraco/desfalque |
 | **4** | Chat — contexto do banco; web sob demanda | Baixo |
 
 **Regra:** descarte total = **zero token**. Modelo nunca é sobrescrito pelo LLM (`refine_best_pick` legado não decide mais).
 
-- **BSA / BSB**: `.cursor/skills/competitions/BSA.md`, `BSB.md` + `services/competitions.py`
-- **WC**: wind-down — últimos jogos; manter knockout_climate
+- **BSA**: `.cursor/skills/competitions/BSA.md` + `services/competitions.py`
+- **CDB**: `.cursor/skills/competitions/CDB.md` — fallback CBF quando football-data retorna 403
+- **BSB / WC**: desativadas (`Competition.is_active = False`) — não sincronizar por padrão; `services/competitions.ensure_competitions()` não força reativação
 - Seed: `python scripts/ensure_brazil_competitions.py`
 
 ## Especialização por Campeonato
 
-O Palpitaria FC opera com "Módulos de Especialista" para cada competição, pois cada uma possui dinâmicas únicas:
+O Palpitaria FC opera com "Módulos de Especialista" para cada competição ativa:
 
-- **Copa do Mundo (WC)**: Wind-down — amostras curtas, hybrid web. Ver `WC.md`.
 - **Brasileirão A (BSA)**: API first, mando, Poisson. Ver `BSA.md`.
-- **Brasileirão B (BSB)**: API first, mando forte, edge exigente. Ver `BSB.md`.
-- **Copa do Brasil (CDB)**: Mata-mata. Ver `CDB.md`.
+- **Copa do Brasil (CDB)**: Mata-mata, fonte CBF. Ver `CDB.md`.
+
+Desativadas (mantidas só como referência histórica/reserva):
+- **Copa do Mundo (WC)**: encerrada em 2026-08 — torneio já jogado. Ver `WC.md`.
+- **Brasileirão B (BSB)**: desativada em 2026-08 para não gastar token nela. Ver `BSB.md`.
 
 Ao analisar um jogo, identifique o `competition_code` e aplique as regras do especialista correspondente.
 

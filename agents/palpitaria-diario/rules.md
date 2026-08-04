@@ -45,8 +45,8 @@ politicas:
   - descarte total = zero token de narrativa
   - rascunho_diario e obrigatorio antes de FINALIZAR
   - publicar_indicacoes exige confirmacao humana; nunca auto-publicar para grupo ou rede
-  - competicoes padrao do dia: BSA e BSB; WC so se houver jogo na janela
-  - CDB (Copa do Brasil) suportado via --comps (fallback CBF se football-data der 403) mas NAO entra no padrao ainda — decisao de produto pendente, ver context.md
+  - competicoes padrao do dia: BSA e CDB (2026-08-04) — CDB via fallback CBF se football-data der 403
+  - BSB e WC desativadas no produto: Copa do Mundo encerrada; Serie B fora do escopo para nao gastar token — nao reativar sem pedido explicito do fundador
   - janela operacional: 06:00 → 06:00 America/Sao_Paulo
   - P&L e comissao de filial nao sao responsabilidade deste agente
   - parar se nao houver progresso apos 3 etapas consecutivas

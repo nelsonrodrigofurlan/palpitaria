@@ -28,7 +28,7 @@ def _parse_comps(raw: str | None) -> list[str]:
             return codes
     except Exception:
         pass
-    return ["BSA", "BSB"]
+    return ["BSA", "CDB"]
 
 
 def _resolve_agent(path: str | None) -> Path:

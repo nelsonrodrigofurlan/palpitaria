@@ -21,8 +21,8 @@ comandos:
         descricao: task_based (padrao) ou autonomous (quando agendado)
       - nome: --comps
         obrigatorio: false
-        descricao: lista BSA,BSB,WC
-    exemplo: python -m palpitaria.agents rodar --agente agents/palpitaria-diario --comps BSA,BSB
+        descricao: lista de competicoes (padrao BSA,CDB; BSB e WC desativadas no produto)
+    exemplo: python -m palpitaria.agents rodar --agente agents/palpitaria-diario --comps BSA,CDB
 
   - nome: validar
     descricao: valida contratos do agente (agent/rules/skills/contracts alinhados)
