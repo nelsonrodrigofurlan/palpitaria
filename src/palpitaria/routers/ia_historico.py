@@ -10,10 +10,12 @@ from palpitaria.deps import TEMPLATES, login_required
 from palpitaria.models import AiRecommendation, Competition
 from palpitaria.services.ai_tracker import (
     build_month_options,
+    competition_rows_from_recommendations,
     compute_split_stats,
     ensure_ia_history_from_reports,
     filter_recommendations_by_month,
     market_rows_from_stats,
+    monthly_trend,
     parse_month_param,
     prune_discarded_pending_recommendations,
     resolve_pending_recommendations,
@@ -61,6 +63,20 @@ def list_ia_historico(
     filtered = filter_recommendations_by_month(all_recommendations, year, month)
     split = compute_split_stats(filtered)
 
+    # Evolução mensal (últimos meses) e quebra por competição — sem inventar odds/ROI,
+    # só taxa de acerto ao longo do tempo. A quebra por competição só faz sentido em "Todos".
+    trend = monthly_trend(all_recommendations, months=6)
+    homologated_comp_rows = (
+        competition_rows_from_recommendations(all_recommendations, homologated=True)
+        if not comp_code
+        else []
+    )
+    alternate_comp_rows = (
+        competition_rows_from_recommendations(all_recommendations, homologated=False)
+        if not comp_code
+        else []
+    )
+
     cy, cm = current_period()
     return TEMPLATES.TemplateResponse(
         request,
@@ -72,6 +88,9 @@ def list_ia_historico(
             "alternate_market_rows": market_rows_from_stats(split["alternate"]),
             "homologated_rows": rows_for_scope(filtered, homologated=True),
             "alternate_rows": rows_for_scope(filtered, homologated=False),
+            "trend": trend,
+            "homologated_comp_rows": homologated_comp_rows,
+            "alternate_comp_rows": alternate_comp_rows,
             "month_options": month_options,
             "selected_mes": selected_mes,
             "selected_period": selected_period,

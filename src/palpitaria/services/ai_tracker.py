@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import unicodedata
+from collections import defaultdict
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -531,3 +532,72 @@ def rows_for_scope(recommendations: list[AiRecommendation], *, homologated: bool
     """Lista entradas do snapshot gravado na análise — histórico imutável."""
     pool = [r for r in recommendations if r.excluded != homologated]
     return [_row_from_rec(r) for r in _latest_per_fixture(pool)]
+
+
+def monthly_trend(recommendations: list[AiRecommendation], *, months: int = 6) -> list[dict]:
+    """Taxa de acerto por mês (homologadas x alternativas) — últimos `months` meses com dados.
+
+    Não é ROI (não há odds/stake gravadas por recomendação) — é só evolução do % de acerto
+    ao longo do tempo, pra ver se o filtro anti-zero-gols está melhorando ou piorando.
+    """
+    from palpitaria.services.ledger import period_label
+
+    buckets: dict[tuple[int, int], list[AiRecommendation]] = defaultdict(list)
+    for rec in recommendations:
+        d = analysis_local_date(rec.analyzed_at)
+        buckets[(d.year, d.month)].append(rec)
+
+    keys = sorted(buckets.keys(), reverse=True)[:months]
+    keys.reverse()  # ordem cronológica pra exibir
+
+    rows = []
+    for year, month in keys:
+        recs = buckets[(year, month)]
+        homologated = compute_accuracy_stats(recs, homologated_only=True)
+        alternate = compute_accuracy_stats(recs, homologated_only=False)
+        rows.append(
+            {
+                "period": period_label(year, month),
+                "year": year,
+                "month": month,
+                "homologated_hit_rate_pct": homologated["hit_rate_pct"],
+                "homologated_resolved": homologated["resolved"],
+                "homologated_hits": homologated["hits"],
+                "alternate_hit_rate_pct": alternate["hit_rate_pct"],
+                "alternate_resolved": alternate["resolved"],
+                "alternate_hits": alternate["hits"],
+            }
+        )
+    return rows
+
+
+def competition_rows_from_recommendations(
+    recommendations: list[AiRecommendation], *, homologated: bool
+) -> list[dict]:
+    """Quebra de acerto por competição — só faz sentido na visão 'Todos' (sem filtro de comp)."""
+    pool = [r for r in recommendations if r.excluded != homologated]
+    latest = _latest_per_fixture(pool)
+    resolved = [r for r in latest if r.outcome in ("HIT", "MISS")]
+
+    by_comp: dict[str, dict] = {}
+    for rec in resolved:
+        code = rec.competition_code or "—"
+        bucket = by_comp.setdefault(code, {"hit": 0, "miss": 0, "total": 0})
+        bucket["total"] += 1
+        if rec.outcome == "HIT":
+            bucket["hit"] += 1
+        else:
+            bucket["miss"] += 1
+
+    rows = []
+    for code, data in sorted(by_comp.items(), key=lambda x: -x[1]["total"]):
+        rows.append(
+            {
+                "competition_code": code,
+                "hit": data["hit"],
+                "miss": data["miss"],
+                "total": data["total"],
+                "hit_rate_pct": round(data["hit"] / data["total"] * 100) if data["total"] else None,
+            }
+        )
+    return rows

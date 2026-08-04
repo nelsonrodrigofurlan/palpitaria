@@ -64,6 +64,33 @@
 
 <h2 style="font-size: 1.05rem; margin: 0 0 1rem; color: var(--blue);">{{ selected_period }}</h2>
 
+{% if trend and trend|length > 1 %}
+<div class="card" style="margin-bottom: 1.5rem;">
+  <h4 style="margin: 0 0 0.25rem; font-size: 0.9rem;">Evolução do % de acerto</h4>
+  <p class="sub" style="font-size: 0.8rem; margin: 0 0 0.75rem;">
+    Últimos {{ trend|length }} meses com leituras — não é ROI (não gravamos odds por recomendação), só se o filtro está acertando mais ou menos ao longo do tempo.
+  </p>
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr><th>Mês</th><th>Homologadas — resolvidas</th><th>Homologadas — %</th><th>Alternativas — resolvidas</th><th>Alternativas — %</th></tr>
+      </thead>
+      <tbody>
+        {% for t in trend %}
+        <tr>
+          <td><strong>{{ t.period }}</strong></td>
+          <td>{{ t.homologated_resolved }}</td>
+          <td>{% if t.homologated_hit_rate_pct is not none %}{{ t.homologated_hit_rate_pct }}%{% else %}—{% endif %}</td>
+          <td>{{ t.alternate_resolved }}</td>
+          <td>{% if t.alternate_hit_rate_pct is not none %}{{ t.alternate_hit_rate_pct }}%{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <!-- HOMOLOGADAS -->
 <div class="card ia-panel collapsed" style="margin-bottom: 1.5rem;">
   <div class="card-header" onclick="toggleIaPanel(this)">
@@ -127,6 +154,30 @@
               <td class="pass">{{ m.hit }}</td>
               <td class="fail">{{ m.miss }}</td>
               <td>{% if m.hit_rate_pct is not none %}{{ m.hit_rate_pct }}%{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if homologated_comp_rows %}
+    <div style="margin: 1rem 0; padding: 1rem; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+      <h4 style="margin: 0 0 0.75rem; font-size: 0.9rem;">Por competição</h4>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>Competição</th><th>Total</th><th>Acertos</th><th>Erros</th><th>%</th></tr>
+          </thead>
+          <tbody>
+            {% for c in homologated_comp_rows %}
+            <tr>
+              <td><strong>{{ c.competition_code }}</strong></td>
+              <td>{{ c.total }}</td>
+              <td class="pass">{{ c.hit }}</td>
+              <td class="fail">{{ c.miss }}</td>
+              <td>{% if c.hit_rate_pct is not none %}{{ c.hit_rate_pct }}%{% else %}—{% endif %}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -229,6 +280,30 @@
               <td class="pass">{{ m.hit }}</td>
               <td class="fail">{{ m.miss }}</td>
               <td>{% if m.hit_rate_pct is not none %}{{ m.hit_rate_pct }}%{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if alternate_comp_rows %}
+    <div style="margin: 1rem 0; padding: 1rem; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+      <h4 style="margin: 0 0 0.75rem; font-size: 0.9rem;">Por competição</h4>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>Competição</th><th>Total</th><th>Acertos</th><th>Erros</th><th>%</th></tr>
+          </thead>
+          <tbody>
+            {% for c in alternate_comp_rows %}
+            <tr>
+              <td><strong>{{ c.competition_code }}</strong></td>
+              <td>{{ c.total }}</td>
+              <td class="pass">{{ c.hit }}</td>
+              <td class="fail">{{ c.miss }}</td>
+              <td>{% if c.hit_rate_pct is not none %}{{ c.hit_rate_pct }}%{% else %}—{% endif %}</td>
             </tr>
             {% endfor %}
           </tbody>
